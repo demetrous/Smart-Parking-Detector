@@ -1,0 +1,9 @@
+* text=auto
+
+# Treat common binaries properly
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.psd binary
+*.pdf binary

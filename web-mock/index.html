@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Parking – Live Map Mock</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app-header">
+      <div id="title">Smart Parking – Map Mock</div>
+      <div id="controls">
+        <button id="simulateBtn" title="Toggle simulated live updates">Start Simulation</button>
+        <button id="resetBtn" title="Reset to default demo state">Reset</button>
+      </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="legend" class="panel">
+      <div class="legend-row"><span class="dot dot-green"></span> Available</div>
+      <div class="legend-row"><span class="dot dot-yellow"></span> Potentially soon</div>
+      <div class="legend-row"><span class="dot dot-red"></span> Occupied</div>
+    </div>
+
+    <div id="info" class="panel">
+      <div><strong>Tip:</strong> Click a marker for a Navigate link.</div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="app.js"></script>
+  </body>
+  </html>
+
+
