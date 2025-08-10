@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useTheme } from './ThemeProvider';
 import Map from 'react-map-gl/mapbox';
 import type mapboxgl from 'mapbox-gl';
+import { useSpots } from '../state/SpotsProvider';
+import MapMarkers from './MapMarkers';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 // Use one style (standard) and flip its light preset via setConfigProperty.
@@ -10,6 +12,7 @@ const STANDARD_STYLE = 'mapbox://styles/mapbox/standard';
 export default function ParkingMap() {
   const { theme } = useTheme();
   const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+  const { spots } = useSpots();
 
   if (!token) {
     return (
@@ -57,7 +60,9 @@ export default function ParkingMap() {
           mapRef.current = e.target as unknown as mapboxgl.Map;
           applyPreset();
         }}
-      />
+      >
+        <MapMarkers />
+      </Map>
     </div>
   );
 }

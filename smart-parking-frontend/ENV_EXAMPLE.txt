@@ -1,5 +1,6 @@
 Create a file named `.env` in this folder with:
 
 VITE_MAPBOX_TOKEN=your_mapbox_access_token_here
+VITE_API_URL=http://127.0.0.1:8000
 
 Token: get one at https://account.mapbox.com/
