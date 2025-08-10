@@ -1,1 +1,40 @@
 @import "tailwindcss";
+
+/* Mapbox popup theming to match app theme */
+.mapboxgl-popup.parking-popup.popup-light .mapboxgl-popup-content,
+.mapboxgl-popup.parking-popup:not(.popup-dark) .mapboxgl-popup-content {
+  background: #ffffffea;
+  color: #111111;
+  border: 1px solid #e5e7eb;
+  border-bottom-color: transparent; /* avoid bottom border line over the tip */
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+.mapboxgl-popup.parking-popup.popup-dark .mapboxgl-popup-content {
+  background: rgba(15, 23, 42, 0.92);
+  color: #f1f5f9;
+  border-color: #334155;
+  border-bottom-color: transparent; /* avoid bottom border line over the tip */
+}
+.mapboxgl-popup.parking-popup .mapboxgl-popup-content a { color: inherit; text-decoration: underline; }
+.mapboxgl-popup.parking-popup.popup-light .mapboxgl-popup-tip,
+.mapboxgl-popup.parking-popup:not(.popup-dark) .mapboxgl-popup-tip {
+  border-top-color: #ffffffea !important;
+}
+.mapboxgl-popup.parking-popup.popup-dark .mapboxgl-popup-tip {
+  border-top-color: rgba(15, 23, 42, 0.92) !important;
+}
+
+/* Align the close (x) button with equal insets */
+.mapboxgl-popup.parking-popup .mapboxgl-popup-close-button {
+  top: 8px;
+  right: 8px;
+  color: inherit; /* follow text color for theme */
+}
+
+/* Marker fade animations */
+.pin-anim { transition: opacity 320ms ease; }
+.pin-visible { opacity: 1; }
+.pin-hidden { opacity: 0; pointer-events: none; }
+@keyframes fadeInPin { from { opacity: 0; } to { opacity: 1; } }
+.pin-fade-in { animation: fadeInPin 320ms ease forwards; }

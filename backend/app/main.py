@@ -141,6 +141,14 @@ def create_app() -> FastAPI:
             Spot(id="B1", lat=47.62190, lng=-122.3527, status="occupied"),
             Spot(id="B2", lat=47.62230, lng=-122.3506, status="available"),
             Spot(id="C1", lat=47.62160, lng=-122.3515, status="occupied"),
+            Spot(id="C2", lat=47.622969, lng=-122.355528, status="available"),
+            Spot(id="C3", lat=47.622719, lng=-122.355542, status="available"),
+            Spot(id="C4", lat=47.622662, lng=-122.355544, status="occupied"),
+            Spot(id="C5", lat=47.623118, lng=-122.356099, status="available"),
+            Spot(id="C6", lat=47.623323, lng=-122.355667, status="available"),
+            Spot(id="C7", lat=47.621223, lng=-122.355483, status="occupied"),
+            Spot(id="C8", lat=47.620595, lng=-122.355494, status="soon"),
+            Spot(id="C9", lat=47.620908, lng=-122.356372, status="available"),
         ]
         for s in seeds:
             await store.upsert(s)
