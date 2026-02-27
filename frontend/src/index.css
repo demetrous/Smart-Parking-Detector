@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* MapLibre popup theming to match app theme */
+.maplibregl-popup.parking-popup.popup-light .maplibregl-popup-content,
+.maplibregl-popup.parking-popup:not(.popup-dark) .maplibregl-popup-content {
+  background: #ffffffea;
+  color: #111111;
+  border: 1px solid #e5e7eb;
+  border-bottom-color: transparent;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.maplibregl-popup.parking-popup.popup-dark .maplibregl-popup-content {
+  background: rgba(15, 23, 42, 0.92);
+  color: #f1f5f9;
+  border-color: #334155;
+  border-bottom-color: transparent;
+}
+
+.maplibregl-popup.parking-popup .maplibregl-popup-content a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.maplibregl-popup.parking-popup.popup-light .maplibregl-popup-tip,
+.maplibregl-popup.parking-popup:not(.popup-dark) .maplibregl-popup-tip {
+  border-top-color: #ffffffea !important;
+}
+
+.maplibregl-popup.parking-popup.popup-dark .maplibregl-popup-tip {
+  border-top-color: rgba(15, 23, 42, 0.92) !important;
+}
+
+/* Align the close button with equal insets */
+.maplibregl-popup.parking-popup .maplibregl-popup-close-button {
+  top: 8px;
+  right: 8px;
+  color: inherit;
+}
+
+/* Marker fade animations */
+.pin-anim { transition: opacity 320ms ease; }
+.pin-visible { opacity: 1; }
+.pin-hidden { opacity: 0; pointer-events: none; }
+
+@keyframes fadeInPin {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.pin-fade-in { animation: fadeInPin 320ms ease forwards; }

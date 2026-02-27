@@ -1,0 +1,8 @@
+# Copy this file to .env and fill in your values.
+# Restart the dev server after editing.
+
+# Free MapTiler key — sign up at https://maptiler.com (no credit card needed)
+VITE_MAPTILER_KEY=your_maptiler_key_here
+
+# Backend base URL (default points to local FastAPI)
+VITE_API_URL=http://127.0.0.1:8000

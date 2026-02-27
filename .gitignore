@@ -1,31 +1,45 @@
-# OS / editors
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-.venv/
-venv/
-.env
-.env.*
-
-# Node / web
-node_modules/
+*.pyd
+.Python
+*.egg-info/
 dist/
 build/
-.cache/
-coverage/
+.venv/
+venv/
+env/
+*.db
+*.db-shm
+*.db-wal
 
-# Logs
-*.log
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
 
-# Misc
-*.tmp
-*.swp
+# Environment
+.env
+.env.local
+.env.*.local
 
-# Keep project assets in Description tracked
-!Description/
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ML weights (download on demand)
+*.pt
+*.onnx
+*.engine
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

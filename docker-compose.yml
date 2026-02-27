@@ -1,0 +1,62 @@
+version: "3.9"
+
+# -----------------------------------------------------------------------
+# Smart Parking Detector — local development stack
+#
+# Services:
+#   backend   FastAPI on :8000
+#   frontend  Vite dev server on :5173
+#   detector  (optional) YOLO11 detector — disabled by default
+#
+# Usage:
+#   docker compose up backend frontend
+#   docker compose --profile detector up   # also start the detector
+# -----------------------------------------------------------------------
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DB_PATH: /data/parking.db
+      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+    volumes:
+      - backend_data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://backend:8000
+      VITE_MAPTILER_KEY: ${VITE_MAPTILER_KEY}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  detector:
+    profiles: ["detector"]
+    build:
+      context: ./detector
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_URL: http://backend:8000
+    volumes:
+      - ./detector/slots.json:/app/slots.json:ro
+      # Mount a video file for file-based testing:
+      # - ./sample.mp4:/app/sample.mp4:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    # Override command for different sources:
+    # command: ["python", "-m", "detector.main", "--source", "sample.mp4"]
+    command: ["python", "-m", "detector.main", "--source", "0"]
+
+volumes:
+  backend_data:
