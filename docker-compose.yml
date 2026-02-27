@@ -1,7 +1,7 @@
 version: "3.9"
 
 # -----------------------------------------------------------------------
-# Smart Parking Detector — local development stack
+# ParkingSpotter — local development stack
 #
 # Services:
 #   backend   FastAPI on :8000

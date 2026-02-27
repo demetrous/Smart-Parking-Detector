@@ -1,4 +1,4 @@
-# Detector
+# ParkingSpotter — Detector
 
 Python service that reads a video stream (webcam, file, or RTSP), runs YOLO11 vehicle detection, determines whether each defined parking slot is occupied, and pushes status updates to the backend via `POST /spots`.
 

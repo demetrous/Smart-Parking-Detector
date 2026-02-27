@@ -1,4 +1,4 @@
-# Backend
+# ParkingSpotter — Backend
 
 FastAPI service that stores parking spot state, broadcasts real-time updates to the frontend over WebSocket, and persists a history log to SQLite.
 

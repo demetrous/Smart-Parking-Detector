@@ -1,4 +1,4 @@
-# Frontend
+# ParkingSpotter — Frontend
 
 React + TypeScript single-page app that renders a live parking map using MapLibre GL and MapTiler tiles. Spot status updates arrive over WebSocket from the backend and animate in real time.
 

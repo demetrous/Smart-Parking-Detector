@@ -1,4 +1,4 @@
-# Smart Parking Detector
+# ParkingSpotter
 
 > Turn city cameras into a friendly assistant that helps drivers find open parking — or spots that are likely to be free soon.
 

@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Smart Parking Backend", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="ParkingSpotter Backend", version="0.2.0", lifespan=lifespan)
 
     default_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
     cors_origins = os.getenv("CORS_ORIGINS", ",".join(default_origins)).split(",")
