@@ -2,3 +2,4 @@ ultralytics>=8.3.0
 opencv-python>=4.9.0
 httpx>=0.27.0
 numpy>=1.26.0
+# lapx>=0.5.2  # optional: speeds up ByteTrack's Hungarian assignment (falls back to scipy)

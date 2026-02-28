@@ -42,6 +42,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--debounce", type=int, default=3, help="Frames required to confirm a status change")
     p.add_argument("--skip", type=int, default=2, help="Process every N-th frame (1 = every frame)")
     p.add_argument("--preview", action="store_true", help="Show annotated video window (press q to quit)")
+    # ByteTrack / motion-based "soon"
+    p.add_argument("--track", action="store_true",
+                   help="Enable ByteTrack vehicle tracking for motion-based 'soon' detection")
+    p.add_argument("--motion-px", type=float, default=15.0,
+                   help="Centroid displacement threshold (pixels) to flag a vehicle as moving (default: 15)")
+    p.add_argument("--motion-frames", type=int, default=10,
+                   help="Centroid history window (frames) used for motion detection (default: 10)")
     return p.parse_args()
 
 
@@ -96,12 +103,19 @@ def main() -> None:
         log.info("Spot %s → %s (conf=%.2f)", slot_id, status, confidence)
         post_spot(cfg.backend_url, cfg.camera_id, slot_id, slot.lat, slot.lng, status, confidence)
 
+    if args.track:
+        log.info("ByteTrack enabled — motion-based 'soon' active (threshold=%.0fpx, window=%d frames)",
+                 args.motion_px, args.motion_frames)
+
     detector = OccupancyDetector(
         slots=cfg.slots,
         model_name=args.model,
         iou_threshold=args.iou,
         debounce_frames=args.debounce,
         on_update=on_update,
+        enable_tracking=args.track,
+        motion_window_frames=args.motion_frames,
+        motion_threshold_px=args.motion_px,
     )
 
     log.info("Opening source: %r", source)

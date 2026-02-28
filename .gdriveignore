@@ -1,0 +1,29 @@
+# Google Drive Desktop ignore file — patterns here are NOT synced to the cloud.
+# Syntax is identical to .gitignore.
+
+# Node.js
+node_modules/
+
+# Python bytecode and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Build artefacts
+dist/
+build/
+*.egg-info/
+
+# Database and model weight files (large, local-only)
+*.db
+*.sqlite3
+*.pt
+*.onnx
+
+# Environment secrets
+.env
+.env.local
+.env.*.local

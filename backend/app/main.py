@@ -10,7 +10,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import init_db, load_spots_db
+from .db import init_db, load_spots_db, occupied_since_db, query_dwell_db
 from .hub import Hub
 from .models import Event, Spot, SpotStatus
 from .store import SpotStore
@@ -45,6 +45,48 @@ async def simulator_loop() -> None:
         await hub.broadcast(
             Event(type="spot.update", payload=updated.model_dump(mode="json"))
         )
+
+
+# SOON_THRESHOLD  – fraction of mean dwell after which an occupied spot is
+#                   promoted to "soon".  Default 0.7 (70 %).
+# DWELL_MIN_COUNT – minimum completed dwell samples required before the
+#                   checker acts (avoids acting on too little history).
+_SOON_THRESHOLD = float(os.getenv("SOON_THRESHOLD", "0.7"))
+_DWELL_MIN_COUNT = int(os.getenv("DWELL_MIN_COUNT", "3"))
+_DWELL_CHECK_INTERVAL = float(os.getenv("DWELL_CHECK_INTERVAL", "15.0"))
+
+
+async def dwell_checker_loop() -> None:
+    """Promote occupied spots to 'soon' when dwell-time threshold is crossed.
+
+    Requires at least DWELL_MIN_COUNT completed dwell samples in spot_history
+    so the checker only acts once there is meaningful historical data.
+    Designed to run alongside the real detector (simulator disabled).
+    """
+    while True:
+        await asyncio.sleep(_DWELL_CHECK_INTERVAL)
+        spots = await store.list()
+        for spot in spots:
+            if spot.status != "occupied":
+                continue
+            dwell = await query_dwell_db(spot.id)
+            if dwell["mean"] is None or dwell["count"] < _DWELL_MIN_COUNT:
+                continue
+            since = await occupied_since_db(spot.id)
+            if since is None:
+                continue
+            elapsed = (datetime.now(timezone.utc) - since).total_seconds()
+            if elapsed >= _SOON_THRESHOLD * dwell["mean"]:
+                updated = spot.model_copy(
+                    update={
+                        "status": "soon",
+                        "updatedAt": datetime.now(timezone.utc),
+                    }
+                )
+                await store.upsert(updated)
+                await hub.broadcast(
+                    Event(type="spot.update", payload=updated.model_dump(mode="json"))
+                )
 
 
 # -----------------------------
@@ -90,7 +132,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         for s in _DEMO_SEEDS:
             await store.upsert(s)
 
-    asyncio.create_task(simulator_loop())
+    # SIMULATOR=false disables the random-cycle loop when a real detector is running.
+    if os.getenv("SIMULATOR", "true").lower() not in ("0", "false", "no"):
+        asyncio.create_task(simulator_loop())
+    else:
+        asyncio.create_task(dwell_checker_loop())
     yield
 
 
@@ -119,6 +165,16 @@ def create_app() -> FastAPI:
     @app.get("/spots", response_model=list[Spot])
     async def list_spots() -> list[Spot]:
         return await store.list()
+
+    @app.get("/spots/{spot_id}/dwell")
+    async def get_dwell(spot_id: str) -> dict:
+        """Return historical dwell-time statistics for a spot.
+
+        Response: {"count": int, "mean": float | null, "stddev": float | null}
+        where mean/stddev are in seconds.  count < DWELL_MIN_COUNT means not
+        enough data yet for reliable "soon" predictions.
+        """
+        return await query_dwell_db(spot_id)
 
     @app.post("/spots")
     async def upsert_spot(spot: Spot) -> dict:

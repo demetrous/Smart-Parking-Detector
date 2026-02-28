@@ -48,13 +48,36 @@ Create a `slots.json` file (copy `slots.example.json` as a starting point).
 | `slots[].lat` / `lng` | Geographic coordinates for the map pin |
 | `slots[].polygon` | List of `[x, y]` pixel coordinates in the camera frame |
 
-### How to get polygon coordinates
+### How to get polygon coordinates — draw_slots tool
 
-1. Open your camera feed (or a recorded frame) in any image viewer.
-2. Note the pixel corners of each parking slot.
-3. Enter them as a 4-point (or more) polygon in `slots.json`.
+Use the interactive polygon drawing tool instead of guessing pixel coordinates manually:
 
-You can also use the `--preview` flag to see the annotated bounding boxes overlaid on the live feed.
+```bash
+# Draw slots on frame 0 of a video file
+python draw_slots.py --source parking.mp4
+
+# Resume editing an existing slots.json (loads it, lets you add more)
+python draw_slots.py --source parking.mp4 --config slots.json
+
+# Use a specific frame number as the background
+python draw_slots.py --source parking.mp4 --frame 120
+```
+
+**Controls inside the window:**
+
+| Key | Action |
+|-----|--------|
+| Left-click | Add vertex to current polygon |
+| Right-click / U | Undo last vertex |
+| Enter / N | Finish slot → prompted for ID, lat, lng in terminal |
+| R | Reset / discard current polygon |
+| D (×2) | Delete last completed slot (confirm on second press) |
+| S | Save without quitting |
+| Q / Esc | Save and quit |
+| ← / → | Step one frame back / forward (video files only) |
+
+All completed slots are shown in green; the polygon being drawn is shown in blue.  
+The tool reads an existing `slots.json` on startup (if `--config` or `--output` already exists) so you can incrementally add slots across sessions.
 
 ## Run
 
@@ -103,10 +126,13 @@ works well for angled cameras; lower it for overhead views.
 
 ```
 detector/
-├── main.py       # CLI entry point (argparse, loop, HTTP posts)
-├── config.py     # SlotConfig / CameraConfig dataclasses + JSON loader
-├── source.py     # VideoSource: OpenCV VideoCapture wrapper
-└── inference.py  # OccupancyDetector: YOLO11 + per-slot IoU + debounce
+├── draw_slots.py          # Interactive polygon drawing tool (run directly)
+├── detector/
+│   ├── main.py            # CLI entry point (argparse, loop, HTTP posts)
+│   ├── config.py          # SlotConfig / CameraConfig dataclasses + JSON loader
+│   ├── source.py          # VideoSource: OpenCV VideoCapture wrapper
+│   └── inference.py       # OccupancyDetector: YOLO11 + per-slot IoU + debounce
+└── slots.example.json     # Template slot config
 ```
 
 ## Datasets for testing without a real camera

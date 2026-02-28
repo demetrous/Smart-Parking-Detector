@@ -1,10 +1,12 @@
 import { ThemeProvider, useTheme } from './components/ThemeProvider';
 import ParkingMap from './components/ParkingMap';
-import { SunIcon, MoonIcon } from '@heroicons/react/24/solid';
+import { SunIcon, MoonIcon, SignalSlashIcon } from '@heroicons/react/24/solid';
 import clsx from 'clsx';
+import { useSpots } from './state/SpotsProvider';
 
 function Toolbar() {
   const { theme, toggle } = useTheme();
+  const { connected } = useSpots();
   const isDark = theme === 'dark';
   const wrapClass = clsx(
     'fixed top-2 left-2 z-50 p-1 rounded-xl backdrop-blur border transition-colors',
@@ -26,6 +28,21 @@ function Toolbar() {
       >
         {isDark ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
       </button>
+      {!connected && (
+        <div
+          className={clsx(
+            'mt-1 flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-medium',
+            isDark
+              ? 'bg-rose-900/80 text-rose-200 border-rose-700'
+              : 'bg-rose-50 text-rose-700 border-rose-200',
+          )}
+          title="WebSocket disconnected — reconnecting…"
+          aria-live="polite"
+        >
+          <SignalSlashIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          Offline
+        </div>
+      )}
     </div>
   );
 }
