@@ -60,6 +60,8 @@ Current backend coverage includes:
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | — | Required in production for signed `POST /spots` (must match detector) |
 | `MERGE_CONFIG_PATH` | — | Optional JSON merge rules for multi-camera (`backend/merge.example.json`) |
+| `PARKINGSPOTTER_SEED_DWELL_DEMO` | — | If `true`/`1`/`on`, inserts **past** synthetic `spot_history` for demo spots so dwell stats populate quickly (**dev/demo only**). |
+| `PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR` | — | If `true`, runs the dwell “soon” checker even when `SIMULATOR=true` (default is simulator **or** checker, not both). |
 
 ## API Reference
 

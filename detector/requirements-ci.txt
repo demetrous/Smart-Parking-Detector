@@ -1,0 +1,3 @@
+# CI-only: run detector unit tests without pulling YOLO / torch (see tests that stub ultralytics).
+opencv-python-headless>=4.9.0
+numpy>=1.26.0

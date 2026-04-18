@@ -226,6 +226,8 @@ Start backend + frontend:
 docker compose up backend frontend
 ```
 
+After [Docker](https://docs.docker.com/get-started/) is installed, that command builds images on first run and serves the app at `http://localhost:5173` (frontend) and `http://localhost:8000` (API). For a richer **local dwell demo**, set `PARKINGSPOTTER_SEED_DWELL_DEMO=true` and `PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR=true` on the backend service (see `docker-compose.yml` comments) — **never** in production.
+
 Then open `http://localhost:5173`.
 
 Start the optional detector profile too:
@@ -246,10 +248,12 @@ Notes:
 
 ## Automated tests
 
+**GitHub Actions:** pushes and pull requests to `master` / `main` run `.github/workflows/ci.yml` — Python tests (without installing YOLO/torch) plus frontend `lint` and `build`.
+
 Run the current automated suite from the repo root:
 
 ```bash
-python -m pytest backend/tests detector/tests
+python -m pytest
 ```
 
 What is covered today:

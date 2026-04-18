@@ -16,6 +16,8 @@ cd detector
 pip install -r requirements.txt
 ```
 
+For **CI-style** installs (unit tests only, no Ultralytics/torch), use `pip install -r requirements-ci.txt` together with backend test dependencies — see the repo root `pyproject.toml` and `.github/workflows/ci.yml`.
+
 > YOLO11 weights (`yolo11n.pt`) are downloaded automatically on first run from the Ultralytics CDN.
 > For CPU-only machines the nano (`n`) or small (`s`) variant is recommended.
 

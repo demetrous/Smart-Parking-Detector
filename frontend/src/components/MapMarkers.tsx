@@ -55,7 +55,11 @@ export default function MapMarkers() {
             latitude={s.lat}
             anchor="bottom"
             onClick={(e) => {
-              try { e.originalEvent?.stopPropagation?.(); } catch {}
+              try {
+                e.originalEvent?.stopPropagation?.();
+              } catch {
+                void 0;
+              }
               setSelected({ id: s.id, lat: s.lat, lng: s.lng });
             }}
             style={{ cursor: 'pointer' }}

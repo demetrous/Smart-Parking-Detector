@@ -90,6 +90,7 @@ export function SpotsProvider({ children }: { children: ReactNode }) {
   return <SpotsCtx.Provider value={value}>{children}</SpotsCtx.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook paired with SpotsProvider
 export function useSpots() {
   return useContext(SpotsCtx);
 }

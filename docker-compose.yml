@@ -24,6 +24,10 @@ services:
       CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
       SIMULATOR: ${SIMULATOR:-true}
       PARKINGSPOTTER_SHARED_SECRET: ${PARKINGSPOTTER_SHARED_SECRET:-local-dev-secret-change-me}
+      # Dev-only: synthetic past sessions for dwell stats (do not enable in real deployments).
+      # PARKINGSPOTTER_SEED_DWELL_DEMO: "true"
+      # With SIMULATOR=true, also run the dwell checker (yellow pins from history):
+      # PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR: "true"
     volumes:
       - backend_data:/data
     healthcheck:

@@ -9,6 +9,7 @@ dist/
 build/
 .venv/
 venv/
+.ci-venv/
 env/
 *.db
 *.db-shm

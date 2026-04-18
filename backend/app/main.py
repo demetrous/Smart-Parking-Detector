@@ -11,13 +11,35 @@ from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import HEADER_SIGNATURE, HEADER_TIMESTAMP, verify_signed_detector_request
-from .db import init_db, load_observations_db, load_spots_db, occupied_since_db, query_dwell_db
+from .db import (
+    init_db,
+    load_observations_db,
+    load_spots_db,
+    occupied_since_db,
+    query_dwell_db,
+    seed_dwell_demo_sparse,
+)
 from .hub import Hub
 from .models import Event, Spot, SpotStatus
 from .store import SpotStore
 
 store = SpotStore()
 hub = Hub()
+
+
+def _env_truthy(key: str) -> bool:
+    return os.getenv(key, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _simulator_enabled() -> bool:
+    return os.getenv("SIMULATOR", "true").lower() not in ("0", "false", "no")
+
+
+def _dwell_checker_enabled() -> bool:
+    """Run dwell-time 'soon' promotion. On by default when the random simulator is off."""
+    if not _simulator_enabled():
+        return True
+    return _env_truthy("PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR")
 
 
 # -----------------------------
@@ -123,10 +145,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         for s in _DEMO_SEEDS:
             await store.upsert_canonical(s)
 
-    # SIMULATOR=false disables the random-cycle loop when a real detector is running.
-    if os.getenv("SIMULATOR", "true").lower() not in ("0", "false", "no"):
+    if _env_truthy("PARKINGSPOTTER_SEED_DWELL_DEMO"):
+        target = max(_DWELL_MIN_COUNT, 3)
+        await seed_dwell_demo_sparse(["A1", "B2", "C1"], target)
+
+    if _simulator_enabled():
         asyncio.create_task(simulator_loop())
-    else:
+    if _dwell_checker_enabled():
         asyncio.create_task(dwell_checker_loop())
     yield
 

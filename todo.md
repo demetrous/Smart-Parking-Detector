@@ -22,7 +22,9 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 6. `P1.3` Build Phase 5 multi-camera foundation `Completed Apr 18, 2026`
 7. `P1.4` Clean up detector configuration ownership `Completed Apr 18, 2026`
 8. `P1.5` Define the production deployment baseline `Completed Apr 18, 2026`
-9. `P2` items only after the above are complete
+9. `P2.1` Add CI `Completed Apr 18, 2026`
+10. `P2.3` Improve non-production dwell demos `Completed Apr 18, 2026`
+11. Remaining `P2`+ items (e.g. `P2.2` detector fine-tuning)
 
 ## P0 — security and correctness
 
@@ -374,6 +376,13 @@ Run the high-value checks automatically.
 - Pull requests fail on broken tests, broken frontend builds, or lint errors.
 - CI does not depend on a physical camera or GPU.
 
+**Progress**
+
+- [x] `.github/workflows/ci.yml` — Ubuntu matrix: `pytest` (backend + detector tests with `detector/requirements-ci.txt`, no torch/YOLO install) and frontend `npm ci` + `lint` + `build` (dummy `VITE_*` for build).
+- [x] `detector/requirements-ci.txt` — minimal OpenCV/NumPy for calibration tests; full `detector/requirements.txt` unchanged for real runs.
+- [x] `backend/requirements.txt` — explicit `pytest-anyio` for async-marked tests on clean installs.
+- [x] Frontend: `@types/node` + Vite 7–compatible alternate-`node_modules` plugin; ESLint fixes so `lint` passes in CI.
+
 ### `P2.2` Fine-tune YOLO11 before considering model swaps
 
 **Goal**
@@ -407,6 +416,13 @@ Make dwell-time features easier to demonstrate without polluting production beha
 **Acceptance criteria**
 
 - A fresh dev setup can demonstrate the yellow "soon" signal without waiting for real parking-history accumulation.
+
+**Progress**
+
+- [x] `db.append_spot_history_row` + `db.seed_dwell_demo_sparse` — synthetic **past** completed sessions (chronologically before startup rows) for configurable spot IDs; idempotent when dwell count already meets target.
+- [x] `PARKINGSPOTTER_SEED_DWELL_DEMO` — opt-in startup hook in `lifespan` after demo DB seed; uses `max(DWELL_MIN_COUNT, 3)` as target session count for spots `A1`, `B2`, `C1`.
+- [x] `PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR` — run `dwell_checker_loop` alongside `simulator_loop` when the random simulator stays enabled.
+- [x] Tests: `backend/tests/test_seed_dwell_demo.py`; `docker-compose.yml` + docs (`README.md`, `backend/README.md`) warn against production use.
 
 ## P3 — conditional infrastructure and R&D
 

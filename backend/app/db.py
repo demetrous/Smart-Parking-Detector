@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import statistics
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -53,6 +53,50 @@ async def init_db() -> None:
         await db.execute(_CREATE_HISTORY)
         await db.execute(_CREATE_OBSERVATIONS)
         await db.commit()
+
+
+async def append_spot_history_row(
+    spot_id: str,
+    status: str,
+    confidence: float,
+    recorded_at: datetime,
+) -> None:
+    """Append one row to spot_history without updating the spots table (dev tooling)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO spot_history (spot_id, status, confidence, recorded_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (spot_id, status, confidence, recorded_at.isoformat()),
+        )
+        await db.commit()
+
+
+async def seed_dwell_demo_sparse(spot_ids: list[str], min_completed_sessions: int) -> None:
+    """Append synthetic *past* completed occupancy sessions so dwell stats populate quickly.
+
+    Only adds sessions for spots whose completed-dwell count is below *min_completed_sessions*.
+    Timestamps are several days in the past so they sort before rows written at startup.
+    """
+    if min_completed_sessions <= 0:
+        return
+    anchor = datetime.now(timezone.utc) - timedelta(days=7)
+    dwell_seconds = (400.0, 520.0, 440.0, 610.0, 480.0)
+    for spot_id in spot_ids:
+        info = await query_dwell_db(spot_id)
+        need = min_completed_sessions - info["count"]
+        if need <= 0:
+            continue
+        t = anchor
+        for i in range(need):
+            duration = dwell_seconds[i % len(dwell_seconds)]
+            await append_spot_history_row(spot_id, "available", 1.0, t)
+            t += timedelta(seconds=45)
+            await append_spot_history_row(spot_id, "occupied", 0.92, t)
+            t += timedelta(seconds=duration)
+            await append_spot_history_row(spot_id, "available", 1.0, t)
+            t += timedelta(minutes=2)
 
 
 async def upsert_spot_db(spot) -> None:  # type: ignore[no-untyped-def]
