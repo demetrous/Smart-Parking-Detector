@@ -1,0 +1,77 @@
+Good — three real reassessments to work with. I ran them through the protocol: extracted discrete claims, built a disagreement matrix, and checked which claims actually have cited evidence vs. which are just opinion. Here's what shook out.
+Where all three agree (high confidence)
+These claims appear in all three docs with consistent framing — safe to treat as settled:
+ClaimEvidence strengthArchitecture is sound; not a rewrite situationAll three, no dissentPOST /spots auth gap is P0All three cite the same code blockoccupied_since_db vs query_dwell_db mismatch is a real bugAll three cite backend/app/db.py:104-125No tests / no CI is high-leverage gapAll threedocker-compose.yml references Dockerfiles that don't existAll three verified by filesystem"Soon" signal is the genuine product differentiatorAll threeGemma 4 stays adjacent to the detector, not replacing itAll three (Opus's hybrid model, GPT/Gemini's "optional adjunct" — same shape)Alembic/migrations deferred until schema churn justifies itAll threeDev-only synthetic history seeder would unblock dwell demosAll three
+Genuine disagreements — with verdicts
+1. react-map-gl as "dead weight"
+
+Opus (Apr 16): claimed unused, suggested dropping
+GPT + Gemini (Apr 18): retract — cite live imports in ParkingMap.tsx and MapMarkers.tsx
+Verdict: Opus is wrong. Two independent models cite specific files; Opus did not cite evidence for the "unused" claim. Retract.
+
+2. MQTT/NATS timing
+
+Opus: P1, "swap it now, not later," prerequisite for Phase 5
+GPT: "reasonable when many cameras, premature if one detector"
+Gemini: "schedule with scale — not universal P1 for single-detector MVP"
+Verdict: GPT + Gemini are right. Opus is premature-optimizing. One detector at modest update rates doesn't need a message bus. Defer to when multi-camera load actually justifies the ops cost. Keep it on the radar for Phase 5, not before.
+
+3. Detector swap aggressiveness (YOLO12 / RF-DETR)
+
+Opus: suggests swapping detector families, with some urgency
+GPT + Gemini: fine-tune YOLO11 on parking data first; swap only if measured experiments justify it
+Verdict: GPT + Gemini. Fine-tuning existing stack on PKLot is the cheaper first experiment. Treat family swaps as data-driven, not fashion-driven.
+
+4. Gemma 4 scope
+
+Opus: proposes four applications including a "phone-as-detector SKU" as a new product shape
+GPT + Gemini: more conservative — NL captions and privacy masking only, event-triggered
+Verdict: partial agree with Opus. His own doc already caveats that the Gemma 4 numbers come from Instagram demos. Treat the phone-as-detector SKU as interesting R&D, not a roadmap item until the throughput claims are reproduced on your hardware. The NL-popup and privacy-masking applications are safe additions.
+
+Findings only one model caught
+Worth surfacing because they're real but didn't get triangulated:
+
+SQLite upsert drops lat/lng on conflict — GPT + Gemini only. Real bug, cited at backend/app/db.py:49-53. Opus missed it. Include — P1.
+Detector env (BACKEND_URL) vs slots.json source-of-truth ambiguity — GPT + Gemini only. Real issue. Include — P2.
+README typo sample.mp4--preview — GPT + Gemini only. Trivial fix.
+SpotsProvider.tsx byId re-render issue — Opus only. Plausible but uncited by the other two. Flag, don't prioritize — verify by reading the file before acting.
+Observability / /metrics / structured logging — Opus only. Legitimate production-hardening concern but not urgent; keep at P3.
+Operator dashboard / business-model gap — Opus is more product-focused here. All three noted the gap; only Opus turned it into a roadmap item. Your call — depends on whether this is a product or a demo.
+
+Synthesized priority list
+Merging the three, with disagreements resolved:
+P0 — correctness and security
+
+HMAC auth on POST /spots
+Align occupied_since_db with query_dwell_db session-start rules
+Minimal pytest suite: IoU, debounce, dwell parsing, upsert semantics
+
+P1 — honesty and Phase 5 foundation
+
+Write the actual Dockerfiles; drop version: "3.9"; add healthchecks
+Fix SQLite upsert to also update lat/lng on conflict
+Phase 5: homography tool, merge rules, GET /spots?camera=
+Resolve detector BACKEND_URL vs slots.json source-of-truth
+
+P2 — quality and experiments
+
+CI (lint, typecheck, backend smoke test + short detector clip)
+Fine-tune YOLO11 on PKLot / CNRPark+EXT before considering family swaps
+Dev-only synthetic history seeder (simulator + dwell co-existing)
+Drop react-map-gl or commit to it (not both)
+
+P3 — later / speculative
+
+MQTT/NATS (when multi-camera load actually warrants it)
+Alembic migrations (when schema churn starts)
+Gemma 4 NL popups / privacy masking — event-triggered only
+ONNX/TensorRT edge deployment docs
+Operator dashboard (if this is a product, not a demo)
+Phone-as-detector SKU — R&D only, contingent on reproducing Gemma 4 throughput claims
+
+Meta-observations
+A few things the exercise surfaced about the models themselves, which might be useful for future rounds:
+
+Opus was the most ambitious and the most wrong on verifiable claims. It proposed the most speculative directions (phone-as-detector, aggressive detector swaps, MQTT now) and also made the one factual error (react-map-gl). More imagination, less grounding.
+GPT and Gemini are near-duplicates. Their disagreement matrix against each other is tiny — same bugs found, same priorities, near-identical tables. Running both may not be giving you much independent signal. You'd get more from pairing Opus with one of them plus a third model from a different family (e.g., DeepSeek or Qwen) for actual triangulation.
+The remaining real disagreements are mostly about timing (P1 vs P2) and product scope (demo vs product), not about facts. Those are your calls to make — the models can't resolve them because they don't know your intent.

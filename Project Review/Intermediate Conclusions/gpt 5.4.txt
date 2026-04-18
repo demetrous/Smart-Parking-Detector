@@ -1,0 +1,212 @@
+Yes. These three are already close enough that you can turn them into a disciplined consensus memo instead of a long debate.
+
+What all three already agree on
+
+They all converge on the same core judgment:
+
+The project idea is sound, especially the “soon” signal as the differentiator.
+The current architecture is the right shape for an MVP: detector → API → map, with geometry-first occupancy and optional tracking.
+This is not a rewrite project. It is mainly a security, correctness, testing, packaging, and Phase 5 project.
+The backend has a serious unauthenticated POST /spots issue.
+There is a real dwell-time logic inconsistency between occupied_since_db and query_dwell_db.
+Tests/CI are missing and should be added early.
+Docker/compose is not fully real yet because compose references Dockerfiles that are absent.
+Gemma 4 or a VLM is at most an optional adjunct, not the occupancy backbone.
+
+So your consensus process does not need to discover the main answer. It mainly needs to settle a few disputed priorities.
+
+Where they actually disagree
+
+There are only three meaningful disagreements.
+
+1. MQTT/NATS now vs later
+
+Opus argues for moving detector→backend off HTTP toward MQTT/NATS before Phase 5, calling it a prerequisite for multi-camera scale.
+GPT and Gemini say that is reasonable later, but premature for a single-detector MVP and should be revisited with actual load or Phase 5 scale.
+
+This is not really a factual disagreement. It is a disagreement about when ops complexity becomes worth it.
+
+2. react-map-gl is dead weight vs live dependency
+
+Opus said it looked like dead weight.
+GPT and Gemini explicitly reject that and say the claim should be retracted because the package is imported in the map components.
+
+This one is basically resolved already: GPT/Gemini win.
+
+3. How aggressively to pursue detector upgrades / VLM additions
+
+Opus is more eager about YOLO12 / RF-DETR / Gemma-enabled semantic cues and even a “phone-as-detector” SKU.
+GPT and Gemini treat those as later, measured experiments after correctness, tests, Docker truth, and Phase 5.
+
+Again, this is mostly priority ordering, not deep disagreement.
+
+The best consensus method for these three specific outputs
+
+Do not let them “talk freely.”
+Use a judge-driven issue resolution flow.
+
+Round 1: Give them the shared baseline
+
+Create a short baseline memo from the agreed points above. That strips away 80% of unnecessary debate.
+
+Use this as the opening packet:
+
+Agreed baseline:
+
+- The project idea is sound.
+- The MVP architecture is correct.
+- This is not a rewrite.
+- Immediate priorities include:
+  1. Authenticate POST /spots
+  2. Fix dwell-time inconsistency
+  3. Add tests/CI
+  4. Make Docker truthful
+  5. Design/implement Phase 5 multi-camera support
+- Gemma 4 / VLM is optional adjunct work, not the core occupancy engine.
+- react-map-gl is in active use and should not be described as dead weight.
+
+Only discuss unresolved items:
+1. Should MQTT/NATS be adopted before or after Phase 5?
+2. How soon should detector-family experiments happen?
+3. What belongs in P1 vs P2 vs P3?
+Round 2: Force each model to argue against itself
+
+This is the key move.
+
+Ask each model:
+
+You are not defending your previous answer.
+
+For each unresolved item:
+1. State the strongest argument AGAINST your earlier recommendation
+2. State what evidence would prove your earlier recommendation wrong
+3. Give your updated position in one sentence
+
+Why this works:
+
+Claude/Opus tends to produce ambitious architecture suggestions; this prompt forces it to admit complexity cost.
+GPT tends to optimize for staged execution; this prompt forces it to admit where it may be under-preparing.
+Gemini tends to be balanced; this prompt makes it expose its hidden thresholds.
+Round 3: Use a single arbiter with a strict scoring rubric
+
+Use one model as judge. For these particular outputs, GPT 5.4 is the best arbiter because its prior assessment is already the most explicit about separating “keep now” from “revisit later.”
+
+Have the judge score each disputed issue on:
+
+delivery speed
+implementation risk
+architectural cleanliness
+future scalability
+probability of regret if deferred
+probability of regret if done too early
+
+Prompt:
+
+Resolve each disputed item with a weighted decision.
+
+Weights:
+- delivery speed: 30
+- correctness/security impact: 25
+- implementation risk: 15
+- scalability: 15
+- future rework avoidance: 15
+
+For each item:
+1. Option A
+2. Option B
+3. Weighted scoring table
+4. Winner
+5. Why the loser is not wrong, just lower priority
+
+That last line matters. It helps preserve useful minority opinions without forcing fake unanimity.
+
+Round 4: Require only narrow objections
+
+Then send the judge’s draft back to Claude and Gemini with this constraint:
+
+Respond with exactly one of:
+- ACCEPT
+- ACCEPT WITH REQUIRED CHANGE
+
+If you choose ACCEPT WITH REQUIRED CHANGE:
+- name only one change
+- explain it in 3 sentences max
+- do not rewrite the whole plan
+
+This prevents endless re-expansion.
+
+What the likely consensus outcome will be
+
+Based on the three notes, the consensus they are most likely to reach is:
+
+Final shared position
+
+Keep the current core stack.
+Do not rewrite architecture.
+P0: secure ingest, fix dwell bug, add tests.
+P1: make Docker real, do Phase 5 multi-camera/homography, fix lat/lng upsert.
+P2: CI, measured detector fine-tuning or detector comparisons.
+P2/P3: MQTT/NATS only when actual fan-in/load justifies it.
+P3/R&D: Gemma 4 or VLM only for semantic/operator-assist features, never as the hot-path occupancy backbone.
+
+That outcome is already strongly supported by GPT and Gemini, and even Opus mostly agrees except for being earlier on MQTT and more enthusiastic about detector/VLM experiments.
+
+The shortest way to make them “negotiate”
+
+Use this exact sequence in Cursor:
+
+Prompt 1 to all 3
+Here is the agreed baseline and the unresolved items.
+
+[PASTE BASELINE]
+
+Your task:
+1. Do not defend your prior answer.
+2. Identify which unresolved items are factual vs assumption-based vs preference-based.
+3. For each unresolved item, state the strongest counterargument to your earlier view.
+4. Give your revised position.
+
+Output format:
+- Facts
+- Assumptions
+- Preferences
+- Revised position
+Prompt 2 to GPT 5.4 as judge
+You are the arbiter.
+
+Inputs:
+- Claude revised position
+- Gemini revised position
+- GPT revised position
+
+Produce:
+1. Final consensus roadmap
+2. P0 / P1 / P2 / P3 priorities
+3. Open questions
+4. Evidence that would change the roadmap
+
+Rules:
+- Do not average opinions
+- Prefer the option with the best delivery-to-risk ratio
+- Preserve minority concerns as notes, not roadmap drivers
+Prompt 3 to Claude and Gemini
+Review the consensus roadmap.
+
+Reply with only:
+- ACCEPT
+or
+- ACCEPT WITH REQUIRED CHANGE: [one change]
+
+You may not rewrite the roadmap.
+You may only raise one load-bearing issue.
+My judgment, before they even negotiate
+
+You can save time by treating these as already mostly resolved:
+
+Retract react-map-gl dead-weight claim
+Do not do a rewrite
+Do not let Gemma 4 scope-creep the core system
+Do security/correctness/tests before infrastructure ambition
+Treat MQTT/NATS as conditional, not mandatory today
+
+That is the center of gravity of the three documents.

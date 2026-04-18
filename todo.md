@@ -1,190 +1,324 @@
-# ParkingSpotter — Developer Log & Next Steps
+# ParkingSpotter — Consensus Roadmap
 
-## Status snapshot
+This file is the execution roadmap distilled from the April 2026 intermediate review. It is intentionally prescriptive so future agents can work from it without re-litigating architecture.
 
-| Phase | Status | Summary |
-|-------|--------|---------|
-| 1 | ✅ Done | Frontend scaffold · FastAPI backend · SQLite · WebSocket |
-| 2 | ✅ Done | `draw_slots.py` · `dev.ps1` · smoke test |
-| 3 | ✅ Done | Dwell-time "soon" · WS reconnect · offline indicator |
-| 4 | ✅ Done | ByteTrack · MotionMonitor · motion-based "soon" |
-| 5 | 🔜 Next | Multi-camera + homography |
-| 6 | 📋 Planned | Synthetic test stream |
-| 7 | 📋 Planned | Docker hardening + GPU + privacy masking |
+## Global guardrails
 
----
+- Keep the current three-service shape: `detector -> backend -> frontend`.
+- Do not rewrite the stack or replace the core transport before the current MVP is hardened.
+- Keep `react-map-gl/maplibre`; it is actively used in the frontend map components.
+- Keep detector ingest on HTTP `POST /spots` through `P1`. Do not add MQTT/NATS unless measured multi-camera load justifies it later.
+- Keep YOLO11 + ByteTrack as the baseline detector path. Fine-tune it on parking data before evaluating detector-family swaps.
+- Treat Gemma / VLM ideas as optional, event-triggered adjunct features only. They must not sit on the per-frame occupancy hot path.
+- Prefer additive, test-backed changes. Any schema or API change must update docs in the same task.
 
-## Phase 1 & 2 — complete
+## Execution order
 
-### Project setup
-- Renamed from "Smart Parking Detector" → **ParkingSpotter**
-- Prior work archived on `v1` branch; `master` is a clean slate
+1. `P0.1` Secure detector ingest
+2. `P0.2` Fix dwell-time session logic
+3. `P0.3` Add minimal automated tests
+4. `P1.1` Make Docker truthful
+5. `P1.2` Fix SQLite coordinate upsert
+6. `P1.3` Build Phase 5 multi-camera foundation
+7. `P1.4` Clean up detector configuration ownership
+8. `P2` items only after the above are complete
 
-### Backend (`backend/`)
-- FastAPI app in focused modules: `models.py`, `store.py`, `hub.py`, `db.py`, `main.py`
-- `GET /spots` — returns current spot list (seeded from DB or demo seeds on first run)
-- `POST /spots` — detector pushes updates; backend persists + broadcasts
-- `WS /ws` — WebSocket hub broadcasts `spot.update` to all connected frontends
-- aiosqlite SQLite: `spots` table (current state) + `spot_history` (append-only log)
-- Built-in simulator loop (cycles random spots every 2 s) — disabled via `SIMULATOR=false`
-- `requirements.txt` uses `>=` lower bounds (fixed Python 3.14 / pydantic-core build issue)
+## P0 — security and correctness
 
-### Frontend (`frontend/`)
-- React 19 + TypeScript + Vite 7 + Tailwind CSS v4
-- MapLibre GL + MapTiler (`dataviz` / `dataviz-dark` styles for light/dark theme)
-- Dark/light theme toggle (persists to `localStorage`, respects `prefers-color-scheme`)
-- SVG pin markers (green/yellow/red) with fade animation on occupied → hidden
-- Popup: spot ID, status, "Navigate" → Google Maps
-- WebSocket client + REST fallback for initial load
-- `dev.ps1` — installs packages to `%LOCALAPPDATA%\ParkingSpotter\frontend\node_modules`
-  to avoid npm EBADF failures on Google Drive / OneDrive; also copies `@types/react` and
-  `@types/react-dom` into the project-local `node_modules\@types` so the IDE finds types
-- `vite.launcher.config.ts` — three-layer module resolution bridge (Vite / Rollup / esbuild)
-- `.gdriveignore` excludes `node_modules/`, `__pycache__/`, `.pt`, `.db` from sync
+### `P0.1` Authenticate `POST /spots`
 
-### Detector (`detector/`)
-- YOLO11 vehicle detection (COCO classes: car 2, truck 7, bus 5, motorcycle 3)
-- Per-slot IoU occupancy with polygon config (`slots.json`)
-- Debounce state machine — N consecutive frames must agree before publishing
-- `draw_slots.py` — interactive OpenCV polygon drawing tool (click, Enter, U/D/S/Q)
-- `slots.example.json` — documented template
+**Goal**
 
-### Docs & infra
-- Root `README.md` with architecture Mermaid diagram, plain-English explanations, quick start, API reference, config tables, roadmap
-- `backend/README.md`, `detector/README.md`, `frontend/README.md`
-- `docker-compose.yml` skeleton (backend + frontend + optional detector profile)
+Prevent trivial spoofing of detector updates.
 
----
+**Likely files**
 
-## Phase 3 — complete ✅
+- `backend/app/main.py`
+- `backend/app/models.py`
+- `detector/detector/main.py`
+- `detector/detector/config.py`
+- `detector/README.md`
+- `README.md`
 
-### 3a — Detector on real footage (manual / operational)
-1. Get a sample parking video (PKLot dataset: https://web.inf.ufpr.br/vri/databases/parking-lot-database/)
-2. `cd detector && pip install -r requirements.txt`
-3. Draw slot polygons: `python draw_slots.py --source sample.mp4` → saves `slots.json`
-4. Run: `python -m detector.main --source sample.mp4 --preview`
-5. Set `SIMULATOR=false` in backend env to disable random-cycle loop
-6. Verify backend receives `POST /spots` and frontend map updates live
+**Required implementation**
 
-### 3b — Dwell-time "soon" prediction
-- `query_dwell_db(spot_id)` in `db.py` — scans `spot_history` for completed occupied→available
-  runs, returns `{count, mean, stddev}` in seconds
-- `occupied_since_db(spot_id)` — UTC timestamp of most recent occupied transition
-- `GET /spots/{id}/dwell` — diagnostic endpoint (also useful for a future "X min remaining" UI)
-- `dwell_checker_loop` — background task (active when `SIMULATOR=false`): promotes
-  `occupied` → `soon` when `elapsed ≥ SOON_THRESHOLD × mean_dwell`
-  (requires ≥ `DWELL_MIN_COUNT` samples to act, preventing false positives on sparse history)
-- Env vars: `SIMULATOR` (default `true`), `SOON_THRESHOLD` (default `0.7`),
-  `DWELL_MIN_COUNT` (default `3`), `DWELL_CHECK_INTERVAL` (default `15.0` s)
+- Add shared-secret HMAC authentication for `POST /spots`.
+- Use a timestamp header plus signature header so the backend can reject replayed requests.
+- Verify signatures with a constant-time compare.
+- Keep `GET /health`, `GET /spots`, `GET /spots/{id}/dwell`, and `WS /ws` unchanged unless a later roadmap item says otherwise.
+- Do not add a message broker as part of this task.
 
-### 3c — WebSocket reconnect & offline indicator
-- `connectWs` in `api.ts` → `WsController` interface (`{close()}`); exponential back-off
-  1 s → 2 s → 4 s … 30 s; resets on each successful `onopen`
-- `onStatus` callback (`"connected" | "disconnected"`) exposed as `connected: boolean`
-  on the `SpotsProvider` context
-- `Toolbar` in `App.tsx` shows a red **Offline** pill (`SignalSlashIcon`) when disconnected;
-  disappears automatically on reconnect
+**Recommended contract**
 
----
+- Secret source: environment variable on both detector and backend.
+- Detector sends:
+  - raw JSON body
+  - `X-ParkingSpotter-Timestamp`
+  - `X-ParkingSpotter-Signature`
+- Backend signs and verifies `timestamp + "." + raw_body` with HMAC-SHA256.
+- Reject missing, stale, malformed, or invalid signatures with `401` or `403`.
 
-## Phase 4 — complete ✅
+**Acceptance criteria**
 
-### ByteTrack motion-based "soon"
+- Valid signed detector requests still update spots successfully.
+- Unsigned or incorrectly signed requests are rejected.
+- Replay-window handling is covered by tests.
+- The auth mechanism is documented in both root and detector docs.
 
-**`detector/detector/tracker.py`** (new file)
-- `MotionMonitor` class — rolling centroid history (deque) per ByteTrack track ID
-- `update(track_id, bbox)` — records centroid this frame
-- `is_moving(track_id) → bool` — True if centroid displaced ≥ `threshold` px over the window
-- `displacement(track_id) → float` — raw displacement value (useful for debugging threshold)
-- `prune(active_ids)` — clears stale track history each frame
+### `P0.2` Align dwell-session semantics
 
-**`detector/detector/inference.py`**
-- `OccupancyDetector` gains: `enable_tracking`, `motion_window_frames`, `motion_threshold_px`
-- `SlotState` gains `_debounced_occupied: bool` — decouples the IoU debounce from the
-  published status so "soon" doesn't reset the debounce clock
-- `_process_plain()` — original IoU-only path (unchanged; still the default)
-- `_process_tracked()` — ByteTrack path:
-  1. `model.track(persist=True, tracker="bytetrack.yaml")` replaces `model()`
-  2. Builds `track_id → bbox` map for all vehicle detections this frame
-  3. Per slot: finds best covering track (highest IoU), updates `MotionMonitor`
-  4. Debounce runs on raw IoU signal → drives "available" transitions (stable)
-  5. Motion check on top: occupied + moving track → "soon"; stopped → "occupied";
-     IoU drops below threshold + debounce confirms → "available"
-- `annotate_frame()` — yellow polygon for "soon" slots (was only green/red before)
+**Goal**
 
-**`detector/detector/main.py`**
-- `--track` flag (default off; fully backward-compatible)
-- `--motion-px FLOAT` (default 15.0 px)
-- `--motion-frames INT` (default 10 frames)
+Remove the correctness mismatch between `query_dwell_db()` and `occupied_since_db()`.
 
-**Tuning guide**
-- Lower `--motion-px` → more sensitive (fires sooner; more false positives from camera vibration)
-- Higher `--motion-frames` → more stable (slower to react; good for slow cameras)
-- Good starting point: `--motion-px 20 --motion-frames 8` for 15–25 fps cameras
+**Likely files**
 
----
+- `backend/app/db.py`
+- `backend/app/main.py`
+- new backend tests
 
-## Phase 5 — next 🔜
+**Required implementation**
 
-### Multi-camera support + homography calibration
+- Define one occupancy session rule and use it everywhere:
+  - session starts on the first transition into `occupied` or `soon`
+  - session ends on the next `available`
+  - transitions between `occupied` and `soon` do not start a new session
+- Move the shared interpretation into one helper instead of maintaining two subtly different rules.
+- Preserve timezone-aware datetime handling.
 
-A single camera only sees part of a large parking lot. Phase 5 adds the ability to run multiple detectors simultaneously, each covering a different zone, all feeding into the same backend.
+**Acceptance criteria**
 
-**Tasks**
-- [ ] Each `slots.json` already has a `camera_id` field — backend stores it; slots from different cameras will appear on the same map naturally
-- [ ] **Homography calibration tool**: given 4+ known real-world GPS points visible in the camera frame, compute a homography matrix that maps pixel coordinates → GPS coordinates. This means you draw slots in pixel space and the tool auto-computes lat/lng — no manual coordinate lookup.
-- [ ] Handle overlapping fields of view: if two cameras see the same slot, define a priority or merge rule so they don't fight over the spot's status
-- [ ] Update `draw_slots.py` to optionally accept a homography calibration file and auto-fill lat/lng from clicked pixel coordinates
-- [ ] Add `camera_id` filter to `GET /spots?camera=cam_1` so a deployment can scope queries
+- Dwell statistics and current occupied-since calculations agree on the same session boundaries.
+- A sequence like `occupied -> soon -> occupied -> available` counts as one dwell.
+- Sparse-history cases still return safe empty results.
 
----
+### `P0.3` Add a minimal automated test suite
 
-## Phase 6 — planned 📋
+**Goal**
 
-### Synthetic test stream (Three.js / CARLA)
+Create enough coverage to make the `P0` and `P1` changes safe.
 
-The detector is hard to regression-test against a real camera (lighting changes, weather, different vehicles). A synthetic stream gives reproducible, scriptable test scenarios.
+**Scope**
 
-**Options**
-- **Three.js**: render a top-down 3D parking lot in the browser, export as a video stream via `canvas.captureStream()`. Simple, no GPU needed, good for CI.
-- **CARLA**: full autonomous-driving simulator, photorealistic parking scenarios. Overkill for most tests but useful for evaluating model accuracy.
+- Backend unit tests for:
+  - signed vs unsigned `POST /spots`
+  - dwell-session parsing
+  - SQLite upsert behavior
+- Detector unit tests for:
+  - slot overlap / occupancy threshold behavior
+  - debounce transitions
 
-**Tasks**
-- [ ] Implement a minimal Three.js parking lot scene with controllable car actors
-- [ ] Stream via WebRTC or write frames to a pipe that the detector can consume as `--source`
-- [ ] Write a test harness: place car at slot → assert detector emits "occupied" within N frames; move car away → assert "available"
+**Rules**
 
----
+- Tests must run without a real camera, GPU, or downloaded model weights.
+- Prefer pure-function or fixture-driven tests over long end-to-end flows.
+- Do not build the synthetic video harness yet; that is a later item.
 
-## Phase 7 — planned 📋
+**Acceptance criteria**
 
-### Docker Compose hardening · GPU build · Privacy masking
+- A contributor can run the tests locally with service-local dependencies only.
+- The new auth and dwell fixes are covered before `P1` work begins.
 
-**Tasks**
-- [ ] Complete `docker-compose.yml`: health-checks, restart policies, volume mounts for `parking.db` and `slots.json`
-- [ ] GPU Dockerfile: `nvidia/cuda` base image, `ultralytics[gpu]` wheels, `--gpus all` flag
-- [ ] Privacy masking in `inference.py`: before any frame is stored or displayed, blur faces and licence plates using a lightweight detector (e.g. YOLOv8-face or OpenCV cascade)
-- [ ] `.env.example` for Docker deployment (ports, DB path, CORS, etc.)
-- [ ] GitHub Actions CI: lint (ruff, eslint), type-check (mypy, tsc), smoke test (start backend + run 10-frame detector on a test clip, assert correct `POST /spots` calls)
+## P1 — deployment truth and multi-camera foundation
 
----
+### `P1.1` Make Docker truthful
 
-## Repo state
+**Goal**
 
-- **Branch `master`** — active development (Phases 1–4 complete)
-- **Branch `v1`** — archived prior work: Leaflet mock + React/Mapbox frontend + original FastAPI monolith
-- **GitHub repo** — `github.com/demetrous/Smart-Parking-Detector` (rename to `ParkingSpotter` in Settings when ready)
-- **Domain** — `parkingspotter.com` taken; `parkingspotter.io` and `parkingspotter.app` appear available
+Ensure `docker-compose.yml` matches reality instead of referencing Dockerfiles that do not exist.
 
-## Key architectural decisions (for future contributors)
+**Likely files**
 
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Map provider | MapLibre GL + MapTiler | Open-source, free tier (100k loads/month), no Mapbox lock-in |
-| Detection model | YOLO11n (Ultralytics) | Latest nano model — fast on CPU, drop-in upgrade path to larger models |
-| Occupancy method | Per-slot IoU | More robust than pixel-counting for varied car sizes; simpler than DeepSORT |
-| Tracking | ByteTrack (opt-in, `--track`) | Built into Ultralytics — zero extra dependencies for motion "soon" |
-| Backend storage | In-memory + SQLite write-through | Zero-ops, survives restarts; history table enables dwell-time prediction |
-| Real-time transport | FastAPI WebSocket hub | Single service, no Redis/broker needed at MVP scale |
-| "Soon" via history | `spot_history` dwell stats | Needs no camera movement signal; works even with static CCTV footage |
-| Frontend state | React Context + WS controller | Simple, no Redux needed at this scale; reconnect logic self-contained in `api.ts` |
+- `docker-compose.yml`
+- `backend/Dockerfile`
+- `frontend/Dockerfile`
+- `detector/Dockerfile`
+- deployment docs
+
+**Required implementation**
+
+- Create the three referenced Dockerfiles.
+- Remove the obsolete Compose `version` field.
+- Add service healthchecks.
+- Keep detector startup behind the existing optional profile.
+- Mount persistent backend data cleanly.
+- Document the required environment variables.
+
+**Acceptance criteria**
+
+- `docker compose up backend frontend` builds and starts successfully.
+- `docker compose --profile detector up` also starts the detector path.
+- Healthchecks reflect actual service readiness, not just process startup.
+
+### `P1.2` Fix SQLite coordinate upserts
+
+**Goal**
+
+Stop dropping updated `lat` and `lng` values on `spots` table conflicts.
+
+**Likely files**
+
+- `backend/app/db.py`
+- backend tests
+
+**Required implementation**
+
+- Update the `ON CONFLICT(id) DO UPDATE` clause in `upsert_spot_db()` so `lat` and `lng` are refreshed alongside status, confidence, camera, and timestamp.
+
+**Acceptance criteria**
+
+- Reposting an existing spot with corrected coordinates persists the new coordinates.
+- The behavior is covered by a regression test.
+
+### `P1.3` Build Phase 5 multi-camera support
+
+**Goal**
+
+Support multiple detectors and overlapping views without replacing the current transport model.
+
+**Design decision**
+
+- Keep HTTP ingest.
+- Introduce a camera-aware observation layer instead of relying on last-writer-wins for overlapping cameras.
+- Use explicit configuration-driven merge rules, not heuristics.
+
+**Required deliverables**
+
+1. Backend camera awareness
+   - Add `GET /spots?camera=<camera_id>`.
+   - Preserve `camera_id` consistently through storage and API responses.
+   - Separate per-camera observations from the derived canonical spot state when multiple cameras can report the same physical spot.
+
+2. Homography calibration
+   - Add a calibration artifact per camera using 4+ known pixel-to-world reference points.
+   - Convert clicked slot geometry into lat/lng automatically from that calibration.
+
+3. Slot-authoring workflow
+   - Update `draw_slots.py` to optionally consume a calibration file and auto-fill coordinates.
+   - Preserve manual lat/lng entry as a fallback.
+
+4. Overlap conflict resolution
+   - Implement deterministic merge rules in config, such as camera priority per shared spot.
+   - Do not rely on whichever update arrived last.
+
+**Likely files**
+
+- `backend/app/main.py`
+- `backend/app/models.py`
+- `backend/app/store.py`
+- `backend/app/db.py`
+- `detector/draw_slots.py`
+- `detector/detector/config.py`
+- new calibration tool/files under `detector/`
+- docs
+
+**Acceptance criteria**
+
+- Two cameras can report into one backend without corrupting spot state.
+- `GET /spots` returns the merged canonical view.
+- `GET /spots?camera=...` returns a camera-scoped view.
+- The slot-drawing workflow can generate coordinates from calibration data.
+
+### `P1.4` Make detector endpoint configuration unambiguous
+
+**Goal**
+
+Stop mixing deployment endpoint configuration into the slot-geometry file.
+
+**Winning direction**
+
+- `slots.json` should describe camera identity and slot geometry only.
+- Backend destination should come from CLI and/or environment, not from the geometry file.
+
+**Required implementation**
+
+- Add an explicit detector runtime setting for backend URL.
+- Define precedence clearly: CLI flag overrides environment; environment overrides default.
+- Remove backend URL ownership from the long-term `slots.json` contract.
+- Keep `camera_id` in the slot config.
+
+**Acceptance criteria**
+
+- A deployment can repoint the detector to another backend without editing `slots.json`.
+- The config contract is documented and reflected in `slots.example.json` and detector docs.
+
+## P2 — quality, CI, and measured experiments
+
+### `P2.1` Add CI
+
+**Goal**
+
+Run the high-value checks automatically.
+
+**Required implementation**
+
+- Add GitHub Actions for:
+  - backend and detector test execution
+  - frontend `npm run lint`
+  - frontend `npm run build`
+- Keep the CI fast enough for frequent PR use.
+- Add a lightweight smoke path only if it is deterministic and does not require model downloads.
+
+**Acceptance criteria**
+
+- Pull requests fail on broken tests, broken frontend builds, or lint errors.
+- CI does not depend on a physical camera or GPU.
+
+### `P2.2` Fine-tune YOLO11 before considering model swaps
+
+**Goal**
+
+Improve detector quality without paying the integration cost of a new detector family prematurely.
+
+**Required implementation**
+
+- Establish a parking-lot benchmark set, preferably from PKLot or a similar dataset.
+- Measure the current YOLO11 baseline first.
+- Fine-tune YOLO11 on parking data and compare accuracy and latency against the baseline.
+- Only open a YOLO12 / RF-DETR evaluation if the fine-tuned YOLO11 result still misses agreed quality targets.
+
+**Acceptance criteria**
+
+- The experiment produces a small report with baseline vs tuned metrics.
+- Any proposal to switch detector families includes measured justification, not model hype.
+
+### `P2.3` Improve non-production dwell demos
+
+**Goal**
+
+Make dwell-time features easier to demonstrate without polluting production behavior.
+
+**Required implementation**
+
+- Add a dev-only way to seed completed occupied-to-available history.
+- Keep it disabled in real deployments.
+- Ensure the simulator and dwell logic can coexist in development when explicitly requested.
+
+**Acceptance criteria**
+
+- A fresh dev setup can demonstrate the yellow "soon" signal without waiting for real parking-history accumulation.
+
+## P3 — conditional infrastructure and R&D
+
+### `P3.1` Message bus only when justified
+
+- Revisit MQTT or NATS only after real multi-camera fan-in, burst rate, or offline delivery requirements are measured.
+- Do not treat broker adoption as a prerequisite for Phase 5.
+
+### `P3.2` Event-triggered VLM features
+
+- Limit Gemma / VLM work to secondary workflows such as operator summaries, incident review, or privacy-related assistive flows.
+- Do not put a VLM in the per-frame occupancy loop.
+
+### `P3.3` Optional product-layer work
+
+- Add observability, operator tooling, and dashboard features only after the core system is secure, tested, and multi-camera capable.
+
+## Done means done
+
+A roadmap item is complete only when:
+
+- implementation is merged
+- tests cover the new behavior when practical
+- relevant docs are updated
+- the change follows the guardrails at the top of this file

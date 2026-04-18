@@ -198,7 +198,7 @@ python draw_slots.py --source sample.mp4
 # Click the corners of each slot → Enter → type ID + lat/lng → repeat → Q to save
 
 # Then run the detector
-python -m detector.main --source sample.mp4--preview           # video file, show annotated window
+python -m detector.main --source sample.mp4 --preview           # video file, show annotated window
 python -m detector.main --source 0 --preview                    # webcam
 python -m detector.main --source rtsp://192.168.1.10/stream     # network camera
 
@@ -307,17 +307,26 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 
 ---
 
-## Roadmap
+## Review-driven priorities
 
-| Phase | Status | What was built |
-|-------|--------|----------------|
-| 1 | ✅ Done | Interactive map (MapLibre GL + MapTiler) · FastAPI backend · SQLite persistence · WebSocket real-time updates |
-| 2 | ✅ Done | `draw_slots.py` interactive polygon tool · `dev.ps1` cloud-drive workaround launcher · Simulator for demos |
-| 3 | ✅ Done | Dwell-time "soon" prediction using parking history · WebSocket auto-reconnect with exponential back-off · Offline indicator badge |
-| 4 | ✅ Done | ByteTrack vehicle tracking · Motion-based "soon" (car visibly pulling out) · `tracker.py` MotionMonitor |
-| 5 | 🔜 Next | Multi-camera support: homography calibration, merge overlapping slot views |
-| 6 | 📋 Planned | Synthetic test stream (Three.js / CARLA) for regression testing edge cases |
-| 7 | 📋 Planned | Docker Compose hardening · GPU-enabled Dockerfile · Privacy masking (blur faces/plates) |
+The April 2026 cross-model review converged on these decisions:
+
+- Keep the current three-service architecture. This is a hardening-and-scale project, not a rewrite project.
+- Secure detector ingest first: `POST /spots` needs request authentication before any production exposure.
+- Fix correctness before adding new model families: the dwell-time session logic and SQLite upsert behavior need cleanup first.
+- Keep `react-map-gl/maplibre`; it is actively used by the map components.
+- Keep detector ingest on HTTP for now. Revisit MQTT/NATS only when multi-camera fan-in or deployment load proves it is necessary.
+- Optimize the existing YOLO11 + ByteTrack path before experimenting with YOLO12, RF-DETR, or other detector swaps.
+- Treat Gemma / VLM work as optional, event-triggered adjunct functionality, never as the hot-path occupancy engine.
+
+## Consensus roadmap
+
+| Priority | Focus | Winning direction |
+|----------|-------|-------------------|
+| `P0` | Security + correctness | Add authenticated detector ingest, align dwell-session logic, and add a minimal automated test suite |
+| `P1` | Deployment truth + Phase 5 | Create real Dockerfiles/healthchecks, fix SQLite coordinate upserts, and build multi-camera + homography support |
+| `P2` | Scale prep + measured experiments | Add CI, clean up detector configuration ownership, seed better dwell demos, and fine-tune YOLO11 on parking data |
+| `P3` | Conditional infrastructure / R&D | Add MQTT/NATS only if actual load requires it; keep VLM features off the critical path |
 
 ---
 
@@ -326,13 +335,16 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 | Component | Choice | Why |
 |-----------|--------|-----|
 | Map library | MapLibre GL + MapTiler | Open-source, no vendor lock-in, free tier covers 100k map loads/month |
-| AI detection model | YOLO11n (Ultralytics) | State-of-the-art nano model — fast enough to run on a laptop CPU |
+| React map bindings | `react-map-gl/maplibre` | Already in active use in the frontend; keep it unless the map layer is deliberately rewritten |
+| AI detection model | YOLO11n (Ultralytics) | Fast enough for the current CPU-first MVP; the next recommended step is parking-lot fine-tuning, not a detector-family swap |
 | Vehicle tracking | ByteTrack (built into Ultralytics) | Simple, fast, no extra dependencies — built for exactly this kind of fixed-camera scenario |
 | Occupancy logic | Per-slot IoU (overlap ratio) | More reliable than pixel-counting for varied car sizes and angles |
+| Detector transport | HTTP `POST /spots` now | Good enough for the current MVP; message-bus complexity should wait until real multi-camera load appears |
 | Backend framework | FastAPI (Python) | Async, WebSocket-native, auto-generates API docs at `/docs` |
 | Database | SQLite (aiosqlite) | Zero setup, survives process restarts, history table enables dwell-time prediction |
 | Frontend framework | React 19 + TypeScript + Vite | Modern, fast, type-safe |
 | Styling | Tailwind CSS v4 | Utility-first, small bundle, easy dark mode |
+| VLM / adjunct AI | Event-triggered assistant only | Useful later for summaries, privacy workflows, or operator assist, but not for per-frame occupancy decisions |
 
 ---
 
