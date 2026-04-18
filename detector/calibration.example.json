@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "camera_id": "cam_1",
+  "frame_size": [1920, 1080],
+  "notes": "Pick 4+ stationary landmarks visible in the same frame used for draw_slots (--frame). Each pixel [x,y] must correspond to the listed lat/lng (e.g. from a map or survey).",
+  "reference_points": [
+    { "pixel": [120, 400], "lat": 47.6231, "lng": -122.3545 },
+    { "pixel": [880, 380], "lat": 47.6232, "lng": -122.3538 },
+    { "pixel": [900, 720], "lat": 47.6228, "lng": -122.3537 },
+    { "pixel": [100, 700], "lat": 47.6227, "lng": -122.3544 }
+  ]
+}

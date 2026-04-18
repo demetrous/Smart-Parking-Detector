@@ -200,6 +200,8 @@ pip install -r requirements.txt
 # First: draw your parking slot polygons on a video frame (one-time setup)
 python draw_slots.py --source sample.mp4
 # Click the corners of each slot → Enter → type ID + lat/lng → repeat → Q to save
+# Optional: homography calibration (4+ ground-control points) auto-fills lat/lng — see detector/README.md
+# python draw_slots.py --source sample.mp4 --calibration calibration.json
 
 # Then run the detector
 python -m detector.main --source sample.mp4 --preview           # video file, show annotated window
@@ -265,8 +267,8 @@ python -m pytest
 ```
 
 ```bash
-cd detector
-python -m pytest tests
+# From repo root (recommended — uses pyproject.toml test paths)
+python -m pytest
 ```
 
 ---
@@ -277,14 +279,17 @@ ParkingSpotter can be deployed with a fairly small footprint, but production use
 
 ### Current status
 
-The project is **not production-ready yet**. Before real deployment, complete the roadmap items for:
+**Implemented (see `todo.md`):** signed detector ingest (`P0.1`), shared dwell/session rules (`P0.2`), minimal automated tests (`P0.3`), Dockerfiles + Compose healthchecks (`P1.1`), SQLite coordinate upserts (`P1.2`), multi-camera observations + merge config + homography calibration for slot authoring (`P1.3`), and detector backend URL precedence (`P1.4`).
 
-- authenticated detector ingest (`P0.1`)
-- dwell-time correctness (`P0.2`)
-- minimal automated tests (`P0.3`)
-- truthful Docker/runtime packaging (`P1.1`)
-- coordinate upsert fix (`P1.2`)
-- multi-camera support if more than one camera will report to the same backend (`P1.3`)
+Treat this as **suitable for private pilots and on-prem experiments**, not as a finished public-internet product. Before wide exposure, add your own operational hardening (monitoring, backups, key rotation, incident response) and roadmap **`P2`** items such as CI (`P2.1`).
+
+### Deployer baseline checklist
+
+1. **Hardware:** one fixed RTSP-capable camera per monitored area (production); detector host (CPU sufficient for small pilots); backend/frontend host with persistent disk; operator browser.
+2. **Secrets:** `PARKINGSPOTTER_SHARED_SECRET` matching on detector and backend; MapTiler key for the frontend build; no secrets in git.
+3. **Services:** HTTPS reverse proxy in front of API + static frontend if users leave the LAN; DNS only if internet-facing; backup job for SQLite (`parking.db`).
+4. **Optional / scale-dependent:** `MERGE_CONFIG_PATH` when multiple cameras observe overlapping spots (`backend/merge.example.json`); separate detector vs backend hosts when CPU or network isolation requires it.
+5. **Testing cameras:** iPhone or laptop webcam streams are fine for development; they are not a substitute for a mounted production camera (see below).
 
 ### Deployment matrix
 
@@ -294,7 +299,7 @@ The project is **not production-ready yet**. Before real deployment, complete th
 | Local detector testing | Webcam, sample video, RTSP camera, or iPhone test stream | Same developer machine is fine | Same developer machine is fine | Local network only | `MapTiler` free key | Good for slot-authoring and detector tuning |
 | Private single-camera pilot | One fixed RTSP-capable IP camera | One mini PC / small server | Same machine or separate small VM/server | Reliable LAN, reverse proxy if multiple users, secrets storage, SQLite backups | `MapTiler` key | Smallest realistic deployment |
 | Public single-camera deployment | One fixed RTSP-capable IP camera | One mini PC / small server | Small VM or on-prem server | HTTPS reverse proxy, DNS/domain, secrets storage, SQLite backups, uptime monitoring | `MapTiler` key, hosting account, domain/DNS | Complete `P0` and `P1` hardening before internet exposure |
-| Small multi-camera site | One fixed camera per monitored area | Usually separate detector host or one stronger machine handling several streams | Dedicated backend/frontend host | HTTPS, DNS if public, secrets storage, backups, monitoring, camera/network management | `MapTiler` key, hosting account if cloud | `P1.3` multi-camera support becomes required, not optional |
+| Small multi-camera site | One fixed camera per monitored area | Usually separate detector host or one stronger machine handling several streams | Dedicated backend/frontend host | HTTPS, DNS if public, secrets storage, backups, monitoring, camera/network management, merge config JSON | `MapTiler` key, hosting account if cloud | Configure `MERGE_CONFIG_PATH` + per-camera `camera_id` in detector slots |
 
 ### Required devices
 
@@ -322,7 +327,7 @@ The project is **not production-ready yet**. Before real deployment, complete th
   - Needed if the app is exposed outside a private network.
 - **Secrets management**
   - Store detector/backend shared secrets and environment variables outside source control.
-  - This becomes mandatory once `POST /spots` authentication is implemented.
+  - `POST /spots` is HMAC-authenticated; production deploys must set `PARKINGSPOTTER_SHARED_SECRET` on both services.
 - **Backups**
   - SQLite is acceptable for the current MVP, but `parking.db` must be backed up regularly because it contains current state and dwell history.
 

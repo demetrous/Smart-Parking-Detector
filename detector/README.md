@@ -101,6 +101,21 @@ python draw_slots.py --source parking.mp4 --frame 120
 All completed slots are shown in green; the polygon being drawn is shown in blue.  
 The tool reads an existing `slots.json` on startup (if `--config` or `--output` already exists) so you can incrementally add slots across sessions.
 
+### Homography calibration (auto lat/lng)
+
+For multi-camera / Phase 5 workflows, you can avoid typing lat/lng for every slot by supplying a calibration file with **four or more** reference pairs: pixel `[x, y]` in the **same frame** you use for drawing (see `--frame`) and the corresponding WGS84 `lat` / `lng`.
+
+1. Copy `calibration.example.json` and replace the sample points with real landmarks you can identify on the frame and on a map.
+2. Run:
+
+```bash
+python draw_slots.py --source parking.mp4 --frame 0 --calibration my_calibration.json
+```
+
+3. When you finish a polygon, the tool only asks for the **slot ID**; `lat` / `lng` are taken from the **pixel centroid** of the polygon through the homography (local tangent plane + `cv2.findHomography`).
+
+Keep `camera_id` in the calibration JSON aligned with the slot file and detector (`PARKINGSPOTTER_*` / `slots.json`). Manual lat/lng entry is unchanged if you omit `--calibration`.
+
 ## Run
 
 ```bash

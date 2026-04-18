@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+pythonpath = [".", "backend"]
+testpaths = ["backend/tests", "detector/tests"]
+# Avoid shadowing the `detector` package with pytest's legacy insertion of `detector/` (tool dir).
+addopts = ["--import-mode=importlib"]

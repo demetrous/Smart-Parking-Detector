@@ -38,6 +38,8 @@ The backend container:
 - exposes `/health` for healthchecks
 - expects `PARKINGSPOTTER_SHARED_SECRET` to match the detector when real ingest is enabled
 
+**Production / pilot notes:** back up the SQLite file backing `DB_PATH` regularly; set `CORS_ORIGINS` to your real frontend origin; use `MERGE_CONFIG_PATH` when multiple cameras can see the same spot IDs. Keep the shared detector secret out of version control.
+
 ## Tests
 
 ```bash
@@ -56,6 +58,8 @@ Current backend coverage includes:
 |----------|---------|-------------|
 | `DB_PATH` | `parking.db` | SQLite database file path |
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed origins |
+| `PARKINGSPOTTER_SHARED_SECRET` | — | Required in production for signed `POST /spots` (must match detector) |
+| `MERGE_CONFIG_PATH` | — | Optional JSON merge rules for multi-camera (`backend/merge.example.json`) |
 
 ## API Reference
 

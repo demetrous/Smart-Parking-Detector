@@ -73,6 +73,8 @@ docker compose up frontend
 The frontend container serves the built static app on `http://localhost:5173`.
 `VITE_API_URL` and `VITE_MAPTILER_KEY` are build-time values in the Docker image, so change them before rebuilding the frontend image.
 
+**Production / pilot notes:** the MapTiler **free** tier is enough for demos and light traffic; estimate map loads before relying on it for high-traffic public sites. When the app is served over HTTPS, the reverse proxy must allow **WebSocket** upgrades to the backend (`/ws`) so live updates keep working.
+
 ## Environment variables
 
 | Variable | Default | Description |

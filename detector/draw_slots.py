@@ -14,6 +14,9 @@ Usage
     # Use webcam, jump to frame 60, write to my_slots.json
     python draw_slots.py --source 0 --frame 60 --output my_slots.json
 
+    # Auto-fill lat/lng from pixel centroids using a homography calibration file
+    python draw_slots.py --source parking.mp4 --calibration calibration.json
+
 Controls
 --------
     Left-click          Add vertex to the current polygon
@@ -36,6 +39,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
+from calibration import GeoCalibration, load_calibration_optional
 
 
 # ── colours (BGR) ────────────────────────────────────────────────────────────
@@ -62,8 +67,18 @@ def _save(path: Path, camera_id: str, slots: list[dict]) -> None:
     print(f"[save] Wrote {len(slots)} slot(s) → {path}")
 
 
-def _prompt_slot_meta(existing_ids: set[str]) -> tuple[str, float, float] | None:
-    """Prompt for slot ID, lat, lng in the terminal. Returns None if user cancels."""
+def _polygon_centroid_px(pts: list[tuple[int, int]]) -> tuple[float, float]:
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return sum(xs) / len(xs), sum(ys) / len(ys)
+
+
+def _prompt_slot_meta(
+    existing_ids: set[str],
+    calibration: GeoCalibration | None,
+    polygon_px: list[tuple[int, int]],
+) -> tuple[str, float, float] | None:
+    """Prompt for slot ID (and lat/lng if no calibration). Returns None if user cancels."""
     print("\n─── New slot ───")
     while True:
         raw = input("  Slot ID (e.g. A1) [blank to cancel]: ").strip()
@@ -74,6 +89,11 @@ def _prompt_slot_meta(existing_ids: set[str]) -> tuple[str, float, float] | None
         else:
             slot_id = raw
             break
+    if calibration is not None:
+        cx, cy = _polygon_centroid_px(polygon_px)
+        lat, lng = calibration.pixel_to_lat_lng(cx, cy)
+        print(f"  Using calibration → centroid pixel ({cx:.1f}, {cy:.1f}) → lat {lat:.6f}, lng {lng:.6f}")
+        return slot_id, lat, lng
     while True:
         try:
             lat = float(input("  Latitude  (e.g. 47.623): ").strip())
@@ -175,11 +195,13 @@ class PolygonTool:
         output: Path,
         config: Path | None,
         frame_idx: int,
+        calibration: GeoCalibration | None,
     ) -> None:
         self.source = source
         self.output = output
         self.frame_idx = frame_idx
         self._is_video = _is_video_file(source)
+        self.calibration = calibration
 
         # Load existing config or start fresh
         if config and config.exists():
@@ -188,6 +210,13 @@ class PolygonTool:
         else:
             self.camera_id = "cam_1"
             self.slots: list[dict] = []
+        if self.calibration is not None and self.camera_id != self.calibration.camera_id:
+            print(
+                f"[warn] slots camera_id={self.camera_id!r} differs from "
+                f"calibration camera_id={self.calibration.camera_id!r} — align them for multi-camera ingest."
+            )
+        elif self.calibration is not None and not (config and config.exists()):
+            self.camera_id = self.calibration.camera_id
 
         # Grab base frame
         self._base_frame = _grab_frame(self.source, self.frame_idx)
@@ -235,6 +264,8 @@ class PolygonTool:
         ]
         if self._is_video:
             hud += ["← / →: prev / next frame"]
+        if self.calibration is not None:
+            hud.insert(0, "Calibration: auto lat/lng from polygon centroid")
         _hud(canvas, hud)
 
         # Status line at bottom
@@ -254,7 +285,7 @@ class PolygonTool:
             print("[warn] Need at least 3 vertices to complete a slot.")
             return
         existing_ids = {s["id"] for s in self.slots}
-        meta = _prompt_slot_meta(existing_ids)
+        meta = _prompt_slot_meta(existing_ids, self.calibration, self._current_pts)
         if meta is None:
             print("[info] Slot cancelled — polygon kept, keep adding vertices or press R to reset.")
             return
@@ -279,6 +310,10 @@ class PolygonTool:
         raw = input(f"  Camera ID [{self.camera_id}]: ").strip()
         if raw:
             self.camera_id = raw
+        if self.calibration is not None and self.camera_id != self.calibration.camera_id:
+            print(
+                f"[warn] Camera ID {self.camera_id!r} ≠ calibration {self.calibration.camera_id!r}."
+            )
         print(
             "  Set backend URL via detector --backend-url or PARKINGSPOTTER_BACKEND_URL when you run the detector.\n"
         )
@@ -364,6 +399,13 @@ def _parse_args() -> argparse.Namespace:
         "--frame", type=int, default=0,
         help="Frame index to use as the background image (default: 0)",
     )
+    p.add_argument(
+        "--calibration",
+        help=(
+            "Path to calibration JSON (see calibration.example.json). "
+            "When set, finishing a slot only asks for the spot ID; lat/lng come from the polygon centroid."
+        ),
+    )
     return p.parse_args()
 
 
@@ -384,7 +426,18 @@ def main() -> None:
     else:
         config = None
 
-    tool = PolygonTool(source=source, output=output, config=config, frame_idx=args.frame)
+    cal_path = Path(args.calibration) if args.calibration else None
+    calibration = load_calibration_optional(cal_path)
+    if calibration is not None:
+        print(f"[calibration] Loaded {cal_path} — camera_id={calibration.camera_id!r}")
+
+    tool = PolygonTool(
+        source=source,
+        output=output,
+        config=config,
+        frame_idx=args.frame,
+        calibration=calibration,
+    )
     tool.run()
 
 

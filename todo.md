@@ -19,9 +19,9 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 3. `P0.3` Add minimal automated tests `Completed Apr 18, 2026`
 4. `P1.1` Make Docker truthful `Completed Apr 18, 2026`
 5. `P1.2` Fix SQLite coordinate upsert `Completed Apr 18, 2026`
-6. `P1.3` Build Phase 5 multi-camera foundation `In progress — core ingest + API done; homography + draw_slots calibration pending`
+6. `P1.3` Build Phase 5 multi-camera foundation `Completed Apr 18, 2026`
 7. `P1.4` Clean up detector configuration ownership `Completed Apr 18, 2026`
-8. `P1.5` Define the production deployment baseline
+8. `P1.5` Define the production deployment baseline `Completed Apr 18, 2026`
 9. `P2` items only after the above are complete
 
 ## P0 — security and correctness
@@ -259,8 +259,9 @@ Support multiple detectors and overlapping views without replacing the current t
 - [x] Deterministic merge via `MERGE_CONFIG_PATH` JSON (`default_priority`, `per_spot`) — see `backend/merge.example.json`.
 - [x] `SpotStore` keeps canonical + observation maps; `POST /spots` with `cameraId` merges; legacy posts without `cameraId` still update canonical only.
 - [x] Backend tests for merge priority and legacy ingest.
-- [ ] Homography calibration artifact and pixel→lat/lng auto-fill (`P1.3` remainder).
-- [ ] `draw_slots.py` optional calibration file consumption and coordinate auto-fill (`P1.3` remainder).
+- [x] Homography calibration JSON (`detector/calibration.example.json`) + `detector/calibration.py` (pixel → WGS84 via OpenCV homography in a local tangent plane).
+- [x] `draw_slots.py --calibration <file>` auto-fills `lat`/`lng` from each polygon’s pixel centroid; manual entry remains when no calibration is passed.
+- [x] Detector tests for calibration loading and corner round-trip (`detector/tests/test_calibration.py`).
 
 ### `P1.4` Make detector endpoint configuration unambiguous
 
@@ -343,8 +344,13 @@ Turn "what do we need to buy/create/run?" into an explicit deployment contract b
 
 - A new deployer can list the required devices, services, and subscriptions without reverse-engineering the repo.
 - The docs distinguish mandatory production dependencies from optional upgrades.
-- The docs state clearly that the current codebase still requires `P0` and `P1` hardening work before public production exposure.
+- The docs state clearly that **public** production exposure still expects organizational hardening (monitoring, backups, key rotation) and **`P2`** quality gates such as CI — not only code features.
 - The docs explain that iPhone/mobile-camera streaming is acceptable for testing, but not a production camera substitute.
+
+**Progress**
+
+- [x] Root `README.md` — deployment matrix, inventory, services, subscriptions, iPhone test path, **Current status** + **Deployer baseline checklist** updated for completed `P0` / `P1.1`–`P1.4` / `P1.3`.
+- [x] `backend/README.md` / `frontend/README.md` — production-oriented notes (secrets, MapTiler, build-time env).
 
 ## P2 — quality, CI, and measured experiments
 
