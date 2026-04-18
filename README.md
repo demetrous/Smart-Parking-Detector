@@ -190,6 +190,10 @@ Open `http://localhost:5173` in your browser. You should see a map with coloured
 The detector is only needed when you want to connect a real camera. The simulator in the backend is enough for UI development and demos.
 
 ```bash
+# Set the same shared secret in both backend and detector shells first
+# PowerShell:   $env:PARKINGSPOTTER_SHARED_SECRET="change-me"
+# bash/zsh:     export PARKINGSPOTTER_SHARED_SECRET="change-me"
+
 cd detector
 pip install -r requirements.txt
 
@@ -207,6 +211,63 @@ python -m detector.main --source sample.mp4 --track --preview
 ```
 
 When the detector is running, set `SIMULATOR=false` in the backend environment so the random simulator doesn't interfere.
+
+---
+
+## Containerized local stack
+
+The repo now includes real Dockerfiles for the backend, frontend, and detector.
+
+Start backend + frontend:
+
+```bash
+docker compose up backend frontend
+```
+
+Then open `http://localhost:5173`.
+
+Start the optional detector profile too:
+
+```bash
+docker compose --profile detector up
+```
+
+Notes:
+
+- `docker-compose.yml` stores backend data in the `backend_data` volume.
+- The backend and detector share `PARKINGSPOTTER_SHARED_SECRET`; override the default dev value before any non-local deployment.
+- The frontend image bakes in `VITE_API_URL` and `VITE_MAPTILER_KEY` at build time.
+- The detector profile defaults to a bundled sample-video loop so the optional service can start without a real camera.
+- For a real camera, override the detector command and provide an appropriate `slots.json`.
+
+---
+
+## Automated tests
+
+Run the current automated suite from the repo root:
+
+```bash
+python -m pytest backend/tests detector/tests
+```
+
+What is covered today:
+
+- backend detector-auth request validation
+- backend dwell-session semantics
+- backend SQLite spot upsert regression coverage
+- detector slot-overlap and debounce behavior without a real camera, GPU, or model download
+
+Service-local commands also work:
+
+```bash
+cd backend
+python -m pytest
+```
+
+```bash
+cd detector
+python -m pytest tests
+```
 
 ---
 
@@ -400,6 +461,8 @@ Smart-Parking-Detector/
 | `SIMULATOR` | `true` | Set to `false` when a real detector is running |
 | `DB_PATH` | `parking.db` | Path to the SQLite database file |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated list of allowed browser origins |
+| `PARKINGSPOTTER_SHARED_SECRET` | *(required for detector ingest)* | Shared secret used to verify signed detector `POST /spots` requests |
+| `PARKINGSPOTTER_MAX_SIGNATURE_AGE_SECONDS` | `30` | Maximum allowed clock skew / replay window for detector request signatures |
 | `SOON_THRESHOLD` | `0.7` | Fraction of mean dwell time after which a spot turns yellow (0.7 = 70 %) |
 | `DWELL_MIN_COUNT` | `3` | Minimum number of historical dwell samples needed before predictions activate |
 | `DWELL_CHECK_INTERVAL` | `15.0` | How often (seconds) the dwell-checker runs |
@@ -434,6 +497,23 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 | `POST` | `/spots` | Update or create a spot (used by the detector) |
 | `GET` | `/spots/{id}/dwell` | Returns historical dwell-time stats for one spot: `{count, mean, stddev}` in seconds |
 | `WS` | `/ws` | WebSocket connection — the frontend subscribes here for live updates |
+
+---
+
+## Detector auth contract
+
+`POST /spots` is authenticated with a shared-secret HMAC so arbitrary clients cannot spoof detector updates.
+
+- Configure the same `PARKINGSPOTTER_SHARED_SECRET` value in both the backend and detector environments.
+- Detector sends:
+  - the raw JSON body
+  - `X-ParkingSpotter-Timestamp`
+  - `X-ParkingSpotter-Signature`
+- Signature input is `timestamp + "." + raw_body`
+- Signature algorithm is `HMAC-SHA256`
+- Backend rejects missing, stale, malformed, or invalid signatures
+
+For local development, export the same secret in both shells before starting the backend and detector.
 
 ---
 

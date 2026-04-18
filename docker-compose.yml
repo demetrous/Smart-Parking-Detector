@@ -1,11 +1,9 @@
-version: "3.9"
-
 # -----------------------------------------------------------------------
-# ParkingSpotter — local development stack
+# ParkingSpotter — containerized local stack
 #
 # Services:
 #   backend   FastAPI on :8000
-#   frontend  Vite dev server on :5173
+#   frontend  Static frontend on :5173
 #   detector  (optional) YOLO11 detector — disabled by default
 #
 # Usage:
@@ -18,26 +16,42 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     environment:
       DB_PATH: /data/parking.db
       CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+      SIMULATOR: ${SIMULATOR:-true}
+      PARKINGSPOTTER_SHARED_SECRET: ${PARKINGSPOTTER_SHARED_SECRET:-local-dev-secret-change-me}
     volumes:
       - backend_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_MAPTILER_KEY: ${VITE_MAPTILER_KEY:-}
     ports:
-      - "5173:5173"
-    environment:
-      VITE_API_URL: http://backend:8000
-      VITE_MAPTILER_KEY: ${VITE_MAPTILER_KEY}
+      - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   detector:
@@ -46,17 +60,19 @@ services:
       context: ./detector
       dockerfile: Dockerfile
     environment:
-      BACKEND_URL: http://backend:8000
-    volumes:
-      - ./detector/slots.json:/app/slots.json:ro
-      # Mount a video file for file-based testing:
-      # - ./sample.mp4:/app/sample.mp4:ro
+      PARKINGSPOTTER_SHARED_SECRET: ${PARKINGSPOTTER_SHARED_SECRET:-local-dev-secret-change-me}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f \"python -m detector.main\" >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
-    # Override command for different sources:
-    # command: ["python", "-m", "detector.main", "--source", "sample.mp4"]
-    command: ["python", "-m", "detector.main", "--source", "0"]
+    # Override the default sample-video loop for a real source, for example:
+    # command: ["python", "-m", "detector.main", "--config", "/app/slots.json", "--source", "rtsp://camera/stream"]
 
 volumes:
   backend_data:

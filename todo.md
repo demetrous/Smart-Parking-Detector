@@ -14,11 +14,11 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 
 ## Execution order
 
-1. `P0.1` Secure detector ingest
-2. `P0.2` Fix dwell-time session logic
-3. `P0.3` Add minimal automated tests
+1. `P0.1` Secure detector ingest `Completed Apr 18, 2026`
+2. `P0.2` Fix dwell-time session logic `Completed Apr 18, 2026`
+3. `P0.3` Add minimal automated tests `Completed Apr 18, 2026`
 4. `P1.1` Make Docker truthful
-5. `P1.2` Fix SQLite coordinate upsert
+5. `P1.2` Fix SQLite coordinate upsert `Completed Apr 18, 2026`
 6. `P1.3` Build Phase 5 multi-camera foundation
 7. `P1.4` Clean up detector configuration ownership
 8. `P1.5` Define the production deployment baseline
@@ -66,6 +66,13 @@ Prevent trivial spoofing of detector updates.
 - Replay-window handling is covered by tests.
 - The auth mechanism is documented in both root and detector docs.
 
+**Progress**
+
+- [x] Backend now requires signed detector `POST /spots` requests.
+- [x] Detector now signs updates with `X-ParkingSpotter-Timestamp` and `X-ParkingSpotter-Signature`.
+- [x] Root and detector docs now describe the shared-secret contract.
+- [x] Focused backend tests cover valid, missing, invalid, and stale signatures.
+
 ### `P0.2` Align dwell-session semantics
 
 **Goal**
@@ -93,6 +100,12 @@ Remove the correctness mismatch between `query_dwell_db()` and `occupied_since_d
 - A sequence like `occupied -> soon -> occupied -> available` counts as one dwell.
 - Sparse-history cases still return safe empty results.
 
+**Progress**
+
+- [x] Dwell and occupied-since logic now share one occupancy-session parser.
+- [x] A session starts on the first `occupied` or `soon`, ends on the next `available`, and does not restart on `occupied <-> soon` transitions.
+- [x] Regression tests cover mixed `occupied` / `soon` sessions, open sessions, and sparse-history cases.
+
 ### `P0.3` Add a minimal automated test suite
 
 **Goal**
@@ -119,6 +132,12 @@ Create enough coverage to make the `P0` and `P1` changes safe.
 
 - A contributor can run the tests locally with service-local dependencies only.
 - The new auth and dwell fixes are covered before `P1` work begins.
+
+**Progress**
+
+- [x] Added repo-root and service-local `pytest` workflows.
+- [x] Backend tests now cover detector auth, dwell-session semantics, and SQLite upsert behavior.
+- [x] Detector tests now cover slot-overlap threshold behavior and debounce transitions without a real camera, GPU, or model downloads.
 
 ## P1 — deployment truth and multi-camera foundation
 
@@ -151,6 +170,14 @@ Ensure `docker-compose.yml` matches reality instead of referencing Dockerfiles t
 - `docker compose --profile detector up` also starts the detector path.
 - Healthchecks reflect actual service readiness, not just process startup.
 
+**Progress**
+
+- [x] Created `backend/Dockerfile`, `frontend/Dockerfile`, and `detector/Dockerfile`.
+- [x] Removed the obsolete Compose `version` field.
+- [x] Added Compose healthchecks and persistent backend-volume wiring.
+- [x] Updated root and service docs with Docker usage notes.
+- [ ] Compose build/start verification is still pending on a machine with Docker installed.
+
 ### `P1.2` Fix SQLite coordinate upserts
 
 **Goal**
@@ -170,6 +197,11 @@ Stop dropping updated `lat` and `lng` values on `spots` table conflicts.
 
 - Reposting an existing spot with corrected coordinates persists the new coordinates.
 - The behavior is covered by a regression test.
+
+**Progress**
+
+- [x] `upsert_spot_db()` now refreshes `lat` and `lng` during `ON CONFLICT(id) DO UPDATE`.
+- [x] Regression coverage verifies coordinates change on repost and history rows still append.
 
 ### `P1.3` Build Phase 5 multi-camera support
 

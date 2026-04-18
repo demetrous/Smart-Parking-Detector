@@ -19,6 +19,28 @@ pip install -r requirements.txt
 > YOLO11 weights (`yolo11n.pt`) are downloaded automatically on first run from the Ultralytics CDN.
 > For CPU-only machines the nano (`n`) or small (`s`) variant is recommended.
 
+## Detector authentication
+
+The detector now signs every `POST /spots` request with HMAC-SHA256.
+
+Before running the detector, set the same shared secret in both the backend and detector environments:
+
+```powershell
+$env:PARKINGSPOTTER_SHARED_SECRET="change-me"
+```
+
+```bash
+export PARKINGSPOTTER_SHARED_SECRET="change-me"
+```
+
+Headers sent on each update:
+
+- `X-ParkingSpotter-Timestamp`
+- `X-ParkingSpotter-Signature`
+
+The signature is computed over `timestamp + "." + raw_body`.
+If `PARKINGSPOTTER_SHARED_SECRET` is missing, the detector exits instead of sending unsigned updates.
+
 ## Slot configuration
 
 Create a `slots.json` file (copy `slots.example.json` as a starting point).
@@ -106,6 +128,32 @@ python -m detector.main --source 0 --preview
 | `--debounce` | `3` | Consecutive frames required to confirm a change |
 | `--skip` | `2` | Process every N-th frame (reduces CPU load) |
 | `--preview` | off | Show annotated video window |
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PARKINGSPOTTER_SHARED_SECRET` | *(required)* | Shared secret used to sign detector updates sent to the backend |
+
+## Docker
+
+```bash
+docker compose --profile detector up
+```
+
+The detector image includes a bundled sample video and default `slots.json` so the optional Compose profile can start without a physical camera.
+For a real deployment, override the detector command with your actual source and slot configuration.
+
+## Tests
+
+```bash
+python -m pytest tests
+```
+
+Current detector tests avoid real cameras, GPUs, and model downloads by stubbing the YOLO dependency and checking:
+
+- slot-overlap threshold behavior
+- debounce-driven status transitions
 
 ## How occupancy works
 

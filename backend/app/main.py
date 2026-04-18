@@ -7,9 +7,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import HEADER_SIGNATURE, HEADER_TIMESTAMP, verify_signed_detector_request
 from .db import init_db, load_spots_db, occupied_since_db, query_dwell_db
 from .hub import Hub
 from .models import Event, Spot, SpotStatus
@@ -177,8 +178,15 @@ def create_app() -> FastAPI:
         return await query_dwell_db(spot_id)
 
     @app.post("/spots")
-    async def upsert_spot(spot: Spot) -> dict:
+    async def upsert_spot(request: Request) -> dict:
         """Detector pushes updates here; backend persists and broadcasts."""
+        raw_body = await request.body()
+        verify_signed_detector_request(
+            raw_body=raw_body,
+            timestamp=request.headers.get(HEADER_TIMESTAMP),
+            signature=request.headers.get(HEADER_SIGNATURE),
+        )
+        spot = Spot.model_validate_json(raw_body)
         await store.upsert(spot)
         await hub.broadcast(
             Event(type="spot.update", payload=spot.model_dump(mode="json"))

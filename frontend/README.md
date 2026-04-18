@@ -51,6 +51,15 @@ npm run build   # Output in dist/
 npm run preview # Preview the production build locally
 ```
 
+## Docker
+
+```bash
+docker compose up frontend
+```
+
+The frontend container serves the built static app on `http://localhost:5173`.
+`VITE_API_URL` and `VITE_MAPTILER_KEY` are build-time values in the Docker image, so change them before rebuilding the frontend image.
+
 ## Environment variables
 
 | Variable | Default | Description |

@@ -23,7 +23,32 @@ uvicorn app.main:app --reload
 
 The server starts at `http://127.0.0.1:8000`.
 
-On first run it seeds 13 demo spots and starts a built-in simulator that cycles spot states every 2 seconds. Once the detector is wired up, disable the simulator by removing the `asyncio.create_task(simulator_loop())` line in `app/main.py`.
+On first run it seeds 13 demo spots and starts a built-in simulator that cycles spot states every 2 seconds. Once the detector is wired up, set `SIMULATOR=false` in the environment so the random simulator does not interfere.
+
+## Docker
+
+```bash
+docker compose up backend
+```
+
+The backend container:
+
+- listens on port `8000`
+- persists SQLite data in the Compose-managed `backend_data` volume
+- exposes `/health` for healthchecks
+- expects `PARKINGSPOTTER_SHARED_SECRET` to match the detector when real ingest is enabled
+
+## Tests
+
+```bash
+python -m pytest
+```
+
+Current backend coverage includes:
+
+- signed vs unsigned detector ingest
+- dwell-session parsing
+- SQLite spot upsert behavior
 
 ## Environment variables
 

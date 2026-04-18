@@ -12,6 +12,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from datetime import datetime, timezone
 import cv2
 import httpx
 
+from .auth import current_shared_secret, signed_headers
 from .config import CameraConfig, load_config
 from .inference import OccupancyDetector
 from .source import VideoSource
@@ -70,9 +72,14 @@ def post_spot(
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "cameraId": camera_id,
     }
+    raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     try:
         with httpx.Client(timeout=3.0) as client:
-            client.post(f"{backend_url}/spots", json=payload)
+            client.post(
+                f"{backend_url}/spots",
+                content=raw_body,
+                headers=signed_headers(raw_body),
+            )
     except Exception as exc:
         log.warning("Failed to post spot %s: %s", slot_id, exc)
 
@@ -94,6 +101,12 @@ def main() -> None:
         cfg = _FALLBACK_CONFIG
     except Exception as exc:
         log.error("Failed to load config: %s", exc)
+        sys.exit(1)
+
+    try:
+        current_shared_secret()
+    except RuntimeError as exc:
+        log.error("%s", exc)
         sys.exit(1)
 
     def on_update(slot_id: str, status: str, confidence: float) -> None:

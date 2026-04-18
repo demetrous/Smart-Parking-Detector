@@ -4,10 +4,12 @@ import os
 import statistics
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 import aiosqlite
 
 DB_PATH = Path(os.getenv("DB_PATH", "parking.db"))
+_ACTIVE_SESSION_STATUSES = {"occupied", "soon"}
 
 _CREATE_SPOTS = """
 CREATE TABLE IF NOT EXISTS spots (
@@ -47,6 +49,8 @@ async def upsert_spot_db(spot) -> None:  # type: ignore[no-untyped-def]
             INSERT INTO spots (id, lat, lng, status, confidence, camera_id, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
+                lat         = excluded.lat,
+                lng         = excluded.lng,
                 status      = excluded.status,
                 confidence  = excluded.confidence,
                 camera_id   = excluded.camera_id,
@@ -84,6 +88,35 @@ async def load_spots_db() -> list[tuple]:
         return []
 
 
+def _parse_recorded_at(raw: str) -> datetime:
+    ts = datetime.fromisoformat(raw)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
+def _occupancy_sessions(rows: Iterable[tuple[str, str]]) -> list[tuple[datetime, datetime | None]]:
+    """Return normalized occupancy sessions from a spot's history rows."""
+    sessions: list[tuple[datetime, datetime | None]] = []
+    current_start: datetime | None = None
+
+    for status, recorded_at in rows:
+        ts = _parse_recorded_at(recorded_at)
+        if status in _ACTIVE_SESSION_STATUSES:
+            if current_start is None:
+                current_start = ts
+            continue
+
+        if status == "available" and current_start is not None:
+            sessions.append((current_start, ts))
+            current_start = None
+
+    if current_start is not None:
+        sessions.append((current_start, None))
+
+    return sessions
+
+
 async def query_dwell_db(spot_id: str) -> dict:
     """Return dwell-time statistics (seconds) for a spot.
 
@@ -100,14 +133,9 @@ async def query_dwell_db(spot_id: str) -> dict:
             rows = await cursor.fetchall()
 
     dwells: list[float] = []
-    occupied_start: datetime | None = None
-    for status, recorded_at in rows:
-        if status in ("occupied", "soon") and occupied_start is None:
-            occupied_start = datetime.fromisoformat(recorded_at)
-        elif status == "available" and occupied_start is not None:
-            end = datetime.fromisoformat(recorded_at)
-            dwells.append((end - occupied_start).total_seconds())
-            occupied_start = None
+    for start, end in _occupancy_sessions(rows):
+        if end is not None:
+            dwells.append((end - start).total_seconds())
 
     if not dwells:
         return {"count": 0, "mean": None, "stddev": None}
@@ -117,19 +145,18 @@ async def query_dwell_db(spot_id: str) -> dict:
 
 
 async def occupied_since_db(spot_id: str) -> datetime | None:
-    """Return when the spot most recently transitioned to 'occupied'."""
+    """Return when the current occupied/soon session started, if any."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT recorded_at FROM spot_history "
-            "WHERE spot_id = ? AND status = 'occupied' "
-            "ORDER BY recorded_at DESC LIMIT 1",
+            "SELECT status, recorded_at FROM spot_history "
+            "WHERE spot_id = ? ORDER BY recorded_at ASC",
             (spot_id,),
         ) as cursor:
-            row = await cursor.fetchone()
-    if row is None:
+            rows = await cursor.fetchall()
+
+    sessions = _occupancy_sessions(rows)
+    if not sessions:
         return None
-    ts = datetime.fromisoformat(row[0])
-    # Ensure timezone-aware so arithmetic with utcnow() works
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return ts
+
+    start, end = sessions[-1]
+    return start if end is None else None
