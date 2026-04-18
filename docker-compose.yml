@@ -60,6 +60,7 @@ services:
       context: ./detector
       dockerfile: Dockerfile
     environment:
+      PARKINGSPOTTER_BACKEND_URL: http://backend:8000
       PARKINGSPOTTER_SHARED_SECRET: ${PARKINGSPOTTER_SHARED_SECRET:-local-dev-secret-change-me}
     depends_on:
       backend:

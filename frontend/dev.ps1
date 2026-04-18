@@ -30,6 +30,26 @@ if (-not (Test-Path $modulesDir)) {
     Write-Host "dev.ps1: node_modules found at $modulesDir" -ForegroundColor DarkGreen
 }
 
+# Incomplete installs (e.g. interrupted npm) can leave maplibre-gl without dist/;
+# Vite then fails on maplibre-gl/dist/maplibre-gl.css.
+$maplibreCss = Join-Path $modulesDir 'maplibre-gl\dist\maplibre-gl.css'
+if (-not (Test-Path $maplibreCss)) {
+    Write-Host "dev.ps1: maplibre-gl looks incomplete — running npm install in $LocalDir" -ForegroundColor Yellow
+    if (-not (Test-Path (Join-Path $LocalDir 'package.json'))) {
+        Copy-Item $pkgJson $LocalDir -Force
+    }
+    Push-Location $LocalDir
+    try {
+        npm install
+        if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+    } finally {
+        Pop-Location
+    }
+    if (-not (Test-Path $maplibreCss)) {
+        throw "maplibre-gl still missing dist/maplibre-gl.css after npm install — delete $modulesDir and run dev.ps1 again"
+    }
+}
+
 # Keep @types/react and @types/react-dom in the project-local node_modules so
 # Cursor's tsserver can resolve types without requiring a full local install.
 # Junctions are not viable on Google Drive (requires local NTFS), so we copy.

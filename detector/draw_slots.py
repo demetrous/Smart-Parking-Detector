@@ -50,18 +50,14 @@ COL_DELETE = (60, 60, 230)    # last-slot highlight when about to delete
 
 # ── data helpers ─────────────────────────────────────────────────────────────
 
-def _load_existing(path: Path) -> tuple[str, str, list[dict]]:
-    """Return (camera_id, backend_url, slots_list) from an existing config file."""
+def _load_existing(path: Path) -> tuple[str, list[dict]]:
+    """Return (camera_id, slots_list) from an existing config file."""
     data = json.loads(path.read_text(encoding="utf-8"))
-    return (
-        data.get("camera_id", "cam_1"),
-        data.get("backend_url", "http://127.0.0.1:8000"),
-        data.get("slots", []),
-    )
+    return data.get("camera_id", "cam_1"), data.get("slots", [])
 
 
-def _save(path: Path, camera_id: str, backend_url: str, slots: list[dict]) -> None:
-    payload = {"camera_id": camera_id, "backend_url": backend_url, "slots": slots}
+def _save(path: Path, camera_id: str, slots: list[dict]) -> None:
+    payload = {"camera_id": camera_id, "slots": slots}
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"[save] Wrote {len(slots)} slot(s) → {path}")
 
@@ -187,11 +183,10 @@ class PolygonTool:
 
         # Load existing config or start fresh
         if config and config.exists():
-            self.camera_id, self.backend_url, self.slots = _load_existing(config)
+            self.camera_id, self.slots = _load_existing(config)
             print(f"[load] Loaded {len(self.slots)} existing slot(s) from {config}")
         else:
             self.camera_id = "cam_1"
-            self.backend_url = "http://127.0.0.1:8000"
             self.slots: list[dict] = []
 
         # Grab base frame
@@ -284,9 +279,9 @@ class PolygonTool:
         raw = input(f"  Camera ID [{self.camera_id}]: ").strip()
         if raw:
             self.camera_id = raw
-        raw = input(f"  Backend URL [{self.backend_url}]: ").strip()
-        if raw:
-            self.backend_url = raw
+        print(
+            "  Set backend URL via detector --backend-url or PARKINGSPOTTER_BACKEND_URL when you run the detector.\n"
+        )
         print(
             "\n  Draw polygons by clicking on the frame.\n"
             "  Press Enter when a polygon is done.\n"
@@ -303,7 +298,7 @@ class PolygonTool:
                 continue
 
             if key in (ord("q"), 27):  # Q or Esc
-                _save(self.output, self.camera_id, self.backend_url, self.slots)
+                _save(self.output, self.camera_id, self.slots)
                 break
 
             elif key in (13, ord("n")):  # Enter or N
@@ -329,7 +324,7 @@ class PolygonTool:
                     highlight = False
 
             elif key == ord("s"):  # S — save
-                _save(self.output, self.camera_id, self.backend_url, self.slots)
+                _save(self.output, self.camera_id, self.slots)
 
             elif self._is_video and key == 81:  # ← left arrow
                 self.frame_idx = max(0, self.frame_idx - 1)

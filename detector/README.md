@@ -48,7 +48,6 @@ Create a `slots.json` file (copy `slots.example.json` as a starting point).
 ```json
 {
   "camera_id": "cam_1",
-  "backend_url": "http://127.0.0.1:8000",
   "slots": [
     {
       "id": "A1",
@@ -65,10 +64,11 @@ Create a `slots.json` file (copy `slots.example.json` as a starting point).
 | Field | Description |
 |-------|-------------|
 | `camera_id` | Identifier sent to the backend with every update |
-| `backend_url` | Base URL of the running backend |
 | `slots[].id` | Spot ID — must match the IDs the frontend and backend expect |
 | `slots[].lat` / `lng` | Geographic coordinates for the map pin |
 | `slots[].polygon` | List of `[x, y]` pixel coordinates in the camera frame |
+
+Backend base URL is **not** part of the long-term slot file contract. Use `--backend-url` or `PARKINGSPOTTER_BACKEND_URL` when running the detector. A legacy `backend_url` key in JSON is still read if present.
 
 ### How to get polygon coordinates — draw_slots tool
 
@@ -123,6 +123,7 @@ python -m detector.main --source 0 --preview
 |------|---------|-------------|
 | `--source` | `0` | Webcam index, file path, or RTSP URL |
 | `--config` | `slots.json` | Path to slot config JSON |
+| `--backend-url` | — | Backend base URL (overrides env and legacy JSON) |
 | `--model` | `yolo11n.pt` | Ultralytics model name or local `.pt` path |
 | `--iou` | `0.25` | IoU threshold to classify a slot as occupied |
 | `--debounce` | `3` | Consecutive frames required to confirm a change |
@@ -133,6 +134,7 @@ python -m detector.main --source 0 --preview
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `PARKINGSPOTTER_BACKEND_URL` | `http://127.0.0.1:8000` | Backend base URL when `--backend-url` is not set |
 | `PARKINGSPOTTER_SHARED_SECRET` | *(required)* | Shared secret used to sign detector updates sent to the backend |
 
 ## Docker

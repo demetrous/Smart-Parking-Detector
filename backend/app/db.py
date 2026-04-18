@@ -33,11 +33,25 @@ CREATE TABLE IF NOT EXISTS spot_history (
 )
 """
 
+_CREATE_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS spot_observations (
+    spot_id     TEXT NOT NULL,
+    camera_id   TEXT NOT NULL,
+    lat         REAL NOT NULL,
+    lng         REAL NOT NULL,
+    status      TEXT NOT NULL,
+    confidence  REAL NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (spot_id, camera_id)
+)
+"""
+
 
 async def init_db() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(_CREATE_SPOTS)
         await db.execute(_CREATE_HISTORY)
+        await db.execute(_CREATE_OBSERVATIONS)
         await db.commit()
 
 
@@ -82,6 +96,48 @@ async def load_spots_db() -> list[tuple]:
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute(
                 "SELECT id, lat, lng, status, confidence, camera_id, updated_at FROM spots"
+            ) as cursor:
+                return await cursor.fetchall()
+    except Exception:
+        return []
+
+
+async def upsert_observation_db(spot) -> None:  # type: ignore[no-untyped-def]
+    """Persist one camera's view of a spot (multi-camera ingest)."""
+    if not spot.cameraId:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO spot_observations (spot_id, camera_id, lat, lng, status, confidence, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(spot_id, camera_id) DO UPDATE SET
+                lat         = excluded.lat,
+                lng         = excluded.lng,
+                status      = excluded.status,
+                confidence  = excluded.confidence,
+                updated_at  = excluded.updated_at
+            """,
+            (
+                spot.id,
+                spot.cameraId,
+                spot.lat,
+                spot.lng,
+                spot.status,
+                spot.confidence,
+                spot.updatedAt.isoformat(),
+            ),
+        )
+        await db.commit()
+
+
+async def load_observations_db() -> list[tuple]:
+    """Return all per-camera observations."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT spot_id, camera_id, lat, lng, status, confidence, updated_at "
+                "FROM spot_observations"
             ) as cursor:
                 return await cursor.fetchall()
     except Exception:

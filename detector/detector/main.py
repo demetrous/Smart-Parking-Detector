@@ -21,24 +21,25 @@ import cv2
 import httpx
 
 from .auth import current_shared_secret, signed_headers
-from .config import CameraConfig, load_config
+from .config import CameraConfig, load_config, resolve_backend_url
 from .inference import OccupancyDetector
 from .source import VideoSource
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-_FALLBACK_CONFIG = CameraConfig(
-    camera_id="demo",
-    backend_url="http://127.0.0.1:8000",
-    slots=[],
-)
+_FALLBACK_CONFIG = CameraConfig(camera_id="demo", slots=[])
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Smart Parking Detector")
     p.add_argument("--source", default="0", help="Video source: int index, file path, or RTSP URL")
     p.add_argument("--config", default="slots.json", help="Path to slot config JSON")
+    p.add_argument(
+        "--backend-url",
+        default=None,
+        help="Backend base URL (overrides PARKINGSPOTTER_BACKEND_URL and deprecated backend_url in JSON)",
+    )
     p.add_argument("--model", default="yolo11n.pt", help="Ultralytics model name or path")
     p.add_argument("--iou", type=float, default=0.25, help="IoU threshold for occupancy")
     p.add_argument("--debounce", type=int, default=3, help="Frames required to confirm a status change")
@@ -109,12 +110,15 @@ def main() -> None:
         log.error("%s", exc)
         sys.exit(1)
 
+    backend_url = resolve_backend_url(args.backend_url, cfg)
+    log.info("Posting detector updates to %s", backend_url)
+
     def on_update(slot_id: str, status: str, confidence: float) -> None:
         slot = next((s for s in cfg.slots if s.id == slot_id), None)
         if slot is None:
             return
         log.info("Spot %s → %s (conf=%.2f)", slot_id, status, confidence)
-        post_spot(cfg.backend_url, cfg.camera_id, slot_id, slot.lat, slot.lng, status, confidence)
+        post_spot(backend_url, cfg.camera_id, slot_id, slot.lat, slot.lng, status, confidence)
 
     if args.track:
         log.info("ByteTrack enabled — motion-based 'soon' active (threshold=%.0fpx, window=%d frames)",

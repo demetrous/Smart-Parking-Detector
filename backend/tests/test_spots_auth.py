@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main
+from app import db, main
 
 SECRET = "test-shared-secret"
 
@@ -27,32 +27,39 @@ def _signed_headers(raw_body: bytes, timestamp: str) -> dict[str, str]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, list, list]:
+def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> tuple[TestClient, list, list]:
     stored: list = []
     broadcasted: list = []
 
-    async def fake_init_db() -> None:
-        return None
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "spots_auth.db")
+
+    async def real_init_db() -> None:
+        await db.init_db()
 
     async def fake_load_spots_db() -> list:
+        return []
+
+    async def fake_load_observations_db() -> list:
         return []
 
     async def fake_background_loop() -> None:
         return None
 
-    async def fake_upsert(spot, persist: bool = True) -> None:  # type: ignore[no-untyped-def]
-        stored.append((spot, persist))
+    async def fake_apply_detector_update(spot):  # type: ignore[no-untyped-def]
+        stored.append(spot)
+        return True, spot
 
     async def fake_broadcast(event) -> None:  # type: ignore[no-untyped-def]
         broadcasted.append(event)
 
     monkeypatch.setenv("PARKINGSPOTTER_SHARED_SECRET", SECRET)
     monkeypatch.setenv("PARKINGSPOTTER_MAX_SIGNATURE_AGE_SECONDS", "30")
-    monkeypatch.setattr(main, "init_db", fake_init_db)
+    monkeypatch.setattr(main, "init_db", real_init_db)
     monkeypatch.setattr(main, "load_spots_db", fake_load_spots_db)
+    monkeypatch.setattr(main, "load_observations_db", fake_load_observations_db)
     monkeypatch.setattr(main, "simulator_loop", fake_background_loop)
     monkeypatch.setattr(main, "dwell_checker_loop", fake_background_loop)
-    monkeypatch.setattr(main.store, "upsert", fake_upsert)
+    monkeypatch.setattr(main.store, "apply_detector_update", fake_apply_detector_update)
     monkeypatch.setattr(main.hub, "broadcast", fake_broadcast)
 
     app = main.create_app()
@@ -81,7 +88,7 @@ def test_post_spots_accepts_valid_signature(client: tuple[TestClient, list, list
     assert response.status_code == 200
     assert response.json() == {"ok": True}
     assert len(stored) == 1
-    assert stored[0][0].id == "A1"
+    assert stored[0].id == "A1"
     assert len(broadcasted) == 1
 
 

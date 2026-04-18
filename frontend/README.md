@@ -51,6 +51,19 @@ npm run build   # Output in dist/
 npm run preview # Preview the production build locally
 ```
 
+### Troubleshooting: `Failed to resolve import "maplibre-gl/dist/maplibre-gl.css"`
+
+That means `maplibre-gl` was not fully installed (the package should contain a `dist/` folder). Fix:
+
+```bash
+cd frontend
+rm -rf node_modules && npm install
+```
+
+On Windows (PowerShell): `Remove-Item -Recurse -Force node_modules` then `npm install`.
+
+If you use **`dev.ps1`** (cloud-drive layout), delete `%LOCALAPPDATA%\ParkingSpotter\frontend\node_modules` and run `dev.ps1` again — the script also auto-runs `npm install` when `maplibre-gl` is incomplete.
+
 ## Docker
 
 ```bash

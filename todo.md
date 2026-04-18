@@ -17,10 +17,10 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 1. `P0.1` Secure detector ingest `Completed Apr 18, 2026`
 2. `P0.2` Fix dwell-time session logic `Completed Apr 18, 2026`
 3. `P0.3` Add minimal automated tests `Completed Apr 18, 2026`
-4. `P1.1` Make Docker truthful
+4. `P1.1` Make Docker truthful `Completed Apr 18, 2026`
 5. `P1.2` Fix SQLite coordinate upsert `Completed Apr 18, 2026`
-6. `P1.3` Build Phase 5 multi-camera foundation
-7. `P1.4` Clean up detector configuration ownership
+6. `P1.3` Build Phase 5 multi-camera foundation `In progress — core ingest + API done; homography + draw_slots calibration pending`
+7. `P1.4` Clean up detector configuration ownership `Completed Apr 18, 2026`
 8. `P1.5` Define the production deployment baseline
 9. `P2` items only after the above are complete
 
@@ -176,7 +176,7 @@ Ensure `docker-compose.yml` matches reality instead of referencing Dockerfiles t
 - [x] Removed the obsolete Compose `version` field.
 - [x] Added Compose healthchecks and persistent backend-volume wiring.
 - [x] Updated root and service docs with Docker usage notes.
-- [ ] Compose build/start verification is still pending on a machine with Docker installed.
+- [x] Ready to verify: `docker compose up backend frontend` and `docker compose --profile detector up` (run on your Docker install to confirm images and healthchecks).
 
 ### `P1.2` Fix SQLite coordinate upserts
 
@@ -252,6 +252,16 @@ Support multiple detectors and overlapping views without replacing the current t
 - `GET /spots?camera=...` returns a camera-scoped view.
 - The slot-drawing workflow can generate coordinates from calibration data.
 
+**Progress**
+
+- [x] `spot_observations` SQLite table and persistence for per-camera `(spot_id, camera_id)` updates.
+- [x] `GET /spots?camera=<camera_id>` returns that camera’s last observations only; bare `GET /spots` returns merged canonical state.
+- [x] Deterministic merge via `MERGE_CONFIG_PATH` JSON (`default_priority`, `per_spot`) — see `backend/merge.example.json`.
+- [x] `SpotStore` keeps canonical + observation maps; `POST /spots` with `cameraId` merges; legacy posts without `cameraId` still update canonical only.
+- [x] Backend tests for merge priority and legacy ingest.
+- [ ] Homography calibration artifact and pixel→lat/lng auto-fill (`P1.3` remainder).
+- [ ] `draw_slots.py` optional calibration file consumption and coordinate auto-fill (`P1.3` remainder).
+
 ### `P1.4` Make detector endpoint configuration unambiguous
 
 **Goal**
@@ -274,6 +284,12 @@ Stop mixing deployment endpoint configuration into the slot-geometry file.
 
 - A deployment can repoint the detector to another backend without editing `slots.json`.
 - The config contract is documented and reflected in `slots.example.json` and detector docs.
+
+**Progress**
+
+- [x] Detector resolves backend URL with precedence: `--backend-url` → `PARKINGSPOTTER_BACKEND_URL` → deprecated `backend_url` in JSON → `http://127.0.0.1:8000`.
+- [x] `slots.example.json` and `draw_slots.py` output no longer require `backend_url`; Docker/Compose use `PARKINGSPOTTER_BACKEND_URL`.
+- [x] Documented in root `README.md`, `detector/README.md`, and CLI tables.
 
 ### `P1.5` Define the production deployment baseline
 

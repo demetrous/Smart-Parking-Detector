@@ -7,11 +7,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import HEADER_SIGNATURE, HEADER_TIMESTAMP, verify_signed_detector_request
-from .db import init_db, load_spots_db, occupied_since_db, query_dwell_db
+from .db import init_db, load_observations_db, load_spots_db, occupied_since_db, query_dwell_db
 from .hub import Hub
 from .models import Event, Spot, SpotStatus
 from .store import SpotStore
@@ -30,7 +30,7 @@ async def simulator_loop() -> None:
     order: list[SpotStatus] = ["occupied", "soon", "available"]
     while True:
         await asyncio.sleep(2.0)
-        spots = await store.list()
+        spots = await store.list_canonical()
         if not spots:
             continue
         target = random.choice(spots)
@@ -42,7 +42,7 @@ async def simulator_loop() -> None:
                 "confidence": 0.9,
             }
         )
-        await store.upsert(updated)
+        await store.upsert_canonical(updated)
         await hub.broadcast(
             Event(type="spot.update", payload=updated.model_dump(mode="json"))
         )
@@ -66,7 +66,7 @@ async def dwell_checker_loop() -> None:
     """
     while True:
         await asyncio.sleep(_DWELL_CHECK_INTERVAL)
-        spots = await store.list()
+        spots = await store.list_canonical()
         for spot in spots:
             if spot.status != "occupied":
                 continue
@@ -84,7 +84,7 @@ async def dwell_checker_loop() -> None:
                         "updatedAt": datetime.now(timezone.utc),
                     }
                 )
-                await store.upsert(updated)
+                await store.upsert_canonical(updated)
                 await hub.broadcast(
                     Event(type="spot.update", payload=updated.model_dump(mode="json"))
                 )
@@ -115,23 +115,13 @@ _DEMO_SEEDS: list[Spot] = [
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
 
-    # Restore persisted state from SQLite; fall back to demo seeds on first run
     rows = await load_spots_db()
-    if rows:
-        for row in rows:
-            spot = Spot(
-                id=row[0],
-                lat=row[1],
-                lng=row[2],
-                status=row[3],
-                confidence=row[4],
-                cameraId=row[5],
-                updatedAt=datetime.fromisoformat(row[6]),
-            )
-            await store.upsert(spot, persist=False)
+    obs_rows = await load_observations_db()
+    if rows or obs_rows:
+        await store.bootstrap_from_db(rows, obs_rows)
     else:
         for s in _DEMO_SEEDS:
-            await store.upsert(s)
+            await store.upsert_canonical(s)
 
     # SIMULATOR=false disables the random-cycle loop when a real detector is running.
     if os.getenv("SIMULATOR", "true").lower() not in ("0", "false", "no"):
@@ -164,8 +154,10 @@ def create_app() -> FastAPI:
         return {"ok": True, "time": datetime.now(timezone.utc).isoformat()}
 
     @app.get("/spots", response_model=list[Spot])
-    async def list_spots() -> list[Spot]:
-        return await store.list()
+    async def list_spots(camera: str | None = Query(None, description="Filter to spots last reported by this camera")) -> list[Spot]:
+        if camera:
+            return await store.list_for_camera(camera)
+        return await store.list_canonical()
 
     @app.get("/spots/{spot_id}/dwell")
     async def get_dwell(spot_id: str) -> dict:
@@ -187,10 +179,11 @@ def create_app() -> FastAPI:
             signature=request.headers.get(HEADER_SIGNATURE),
         )
         spot = Spot.model_validate_json(raw_body)
-        await store.upsert(spot)
-        await hub.broadcast(
-            Event(type="spot.update", payload=spot.model_dump(mode="json"))
-        )
+        changed, canonical = await store.apply_detector_update(spot)
+        if changed:
+            await hub.broadcast(
+                Event(type="spot.update", payload=canonical.model_dump(mode="json"))
+            )
         return {"ok": True}
 
     @app.websocket("/ws")

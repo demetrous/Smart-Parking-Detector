@@ -466,6 +466,7 @@ Smart-Parking-Detector/
 | `SOON_THRESHOLD` | `0.7` | Fraction of mean dwell time after which a spot turns yellow (0.7 = 70 %) |
 | `DWELL_MIN_COUNT` | `3` | Minimum number of historical dwell samples needed before predictions activate |
 | `DWELL_CHECK_INTERVAL` | `15.0` | How often (seconds) the dwell-checker runs |
+| `MERGE_CONFIG_PATH` | — | Optional path to a JSON merge file for multi-camera priority (see `backend/merge.example.json`) |
 
 ### Detector — CLI flags
 
@@ -473,6 +474,7 @@ Smart-Parking-Detector/
 |------|---------|-------------|
 | `--source` | `0` | Video source: webcam index (`0`), file path, or `rtsp://` URL |
 | `--config` | `slots.json` | Path to your slot polygon config file |
+| `--backend-url` | — | Backend base URL (overrides `PARKINGSPOTTER_BACKEND_URL` and legacy `backend_url` in JSON) |
 | `--model` | `yolo11n.pt` | AI model to use. `n` = nano (fast), `s`/`m`/`l` = larger/more accurate |
 | `--iou` | `0.25` | How much overlap (0–1) between a vehicle and a slot counts as occupied |
 | `--debounce` | `3` | Frames in a row that must agree before a status change is published |
@@ -493,7 +495,7 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Returns `{"ok": true}` — useful to check if the server is up |
-| `GET` | `/spots` | Returns the current status of all parking spots as a JSON array |
+| `GET` | `/spots` | Returns the merged canonical view of all spots; use `?camera=<camera_id>` for that camera’s last observations only |
 | `POST` | `/spots` | Update or create a spot (used by the detector) |
 | `GET` | `/spots/{id}/dwell` | Returns historical dwell-time stats for one spot: `{count, mean, stddev}` in seconds |
 | `WS` | `/ws` | WebSocket connection — the frontend subscribes here for live updates |
