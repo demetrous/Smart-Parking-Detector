@@ -210,6 +210,136 @@ When the detector is running, set `SIMULATOR=false` in the backend environment s
 
 ---
 
+## Production deployment requirements
+
+ParkingSpotter can be deployed with a fairly small footprint, but production use needs more than just running `uvicorn` and `npm run dev`.
+
+### Current status
+
+The project is **not production-ready yet**. Before real deployment, complete the roadmap items for:
+
+- authenticated detector ingest (`P0.1`)
+- dwell-time correctness (`P0.2`)
+- minimal automated tests (`P0.3`)
+- truthful Docker/runtime packaging (`P1.1`)
+- coordinate upsert fix (`P1.2`)
+- multi-camera support if more than one camera will report to the same backend (`P1.3`)
+
+### Deployment matrix
+
+| Scenario | Camera/device | Detector host | Backend/frontend host | Required services | Required subscriptions/accounts | Notes |
+|----------|---------------|---------------|------------------------|-------------------|----------------------------------|-------|
+| Local UI/demo only | No real camera required | Not required | One developer machine | None beyond local dev tooling | `MapTiler` free key | Uses the built-in backend simulator only |
+| Local detector testing | Webcam, sample video, RTSP camera, or iPhone test stream | Same developer machine is fine | Same developer machine is fine | Local network only | `MapTiler` free key | Good for slot-authoring and detector tuning |
+| Private single-camera pilot | One fixed RTSP-capable IP camera | One mini PC / small server | Same machine or separate small VM/server | Reliable LAN, reverse proxy if multiple users, secrets storage, SQLite backups | `MapTiler` key | Smallest realistic deployment |
+| Public single-camera deployment | One fixed RTSP-capable IP camera | One mini PC / small server | Small VM or on-prem server | HTTPS reverse proxy, DNS/domain, secrets storage, SQLite backups, uptime monitoring | `MapTiler` key, hosting account, domain/DNS | Complete `P0` and `P1` hardening before internet exposure |
+| Small multi-camera site | One fixed camera per monitored area | Usually separate detector host or one stronger machine handling several streams | Dedicated backend/frontend host | HTTPS, DNS if public, secrets storage, backups, monitoring, camera/network management | `MapTiler` key, hosting account if cloud | `P1.3` multi-camera support becomes required, not optional |
+
+### Required devices
+
+- **Fixed camera for production**
+  - Prefer an IP camera with a stable mount, consistent field of view, and RTSP output.
+  - Practical baseline: `1080p`, `15-25 fps`, decent low-light performance, outdoor rating if exposed to weather.
+- **Detector compute host**
+  - Runs the Python detector near the camera or on a server that can reliably read the stream.
+  - For a small pilot, a Windows/Linux mini PC or small server is enough.
+  - GPU is optional at first; it becomes helpful when you add more cameras, higher resolutions, or larger models.
+- **Backend/frontend host**
+  - One VM or one small server can host both the FastAPI backend and the built frontend for a small deployment.
+  - Needs persistent disk storage for `parking.db` backups and logs.
+- **Operator/admin workstation**
+  - Any modern browser for checking the map, validating spots, and basic operations.
+
+### Required services / infrastructure
+
+- **Network**
+  - Reliable connectivity between camera, detector, backend, and users.
+  - Static LAN addressing or DHCP reservations are strongly recommended for cameras and detector hosts.
+- **TLS termination and reverse proxy**
+  - Use `Caddy`, `Nginx`, or `Traefik` in front of the backend/frontend for HTTPS and WebSocket proxying.
+- **DNS / domain**
+  - Needed if the app is exposed outside a private network.
+- **Secrets management**
+  - Store detector/backend shared secrets and environment variables outside source control.
+  - This becomes mandatory once `POST /spots` authentication is implemented.
+- **Backups**
+  - SQLite is acceptable for the current MVP, but `parking.db` must be backed up regularly because it contains current state and dwell history.
+
+### Required subscriptions / accounts
+
+- **Map tile provider**
+  - The frontend currently needs a `MapTiler` API key.
+  - The free tier is enough for demos and light usage; production traffic may need a paid plan depending on map-load volume.
+- **Hosting account**
+  - Needed only if you deploy in the cloud rather than on-prem.
+- **Domain registrar / DNS provider**
+  - Needed only for public internet exposure.
+
+### iPhone as a test camera
+
+Yes. For testing, you can use an iPhone as a temporary video source instead of a dedicated IP camera.
+
+**How it fits the current codebase**
+
+- The detector already accepts a webcam index, file path, or `rtsp://` URL.
+- The most practical iPhone path is to use an app that publishes an RTSP, RTMP, WebRTC, or IP-camera-style stream.
+- RTSP is the easiest match because the detector can read it directly.
+
+**Recommended testing path**
+
+1. Install an iPhone app that can publish a live camera stream over RTSP or a similar protocol.
+2. Put the phone and detector machine on the same Wi-Fi network.
+3. Start the stream on the phone and note the stream URL.
+4. Run the detector against that URL:
+
+```bash
+python -m detector.main --source rtsp://<iphone-stream-url> --preview
+```
+
+5. Use `draw_slots.py` against the same test source or a saved clip from that source to define parking polygons.
+
+**Practical tips**
+
+- Keep the iPhone plugged in; streaming drains battery quickly.
+- Lock orientation, focus, and exposure if the app supports it.
+- Mount the phone rigidly; hand-held footage is poor for occupancy detection.
+- Treat this as a dev/test setup only. Phone streaming is useful for quick experiments, indoor demos, and proof-of-concept work, but it is not a good production substitute for a fixed mounted camera.
+
+**When to use MediaMTX**
+
+- Not required for simple testing if the phone app can already expose RTSP directly.
+- Helpful if the phone app only supports another protocol, or if you want to relay/repackage the stream for multiple consumers later.
+
+### Optional but recommended
+
+- **UPS / battery backup** for camera and compute hosts.
+- **Monitoring and alerting** for service uptime, detector crashes, disk usage, and failed ingest.
+- **Centralized logs** if you operate multiple sites or want easier incident review.
+- **GPU-equipped detector host** if you want better latency on multiple streams.
+- **Media relay such as MediaMTX** only if you need synthetic streams, protocol conversion, or more flexible stream fan-out. It is not required for the current direct RTSP/file/webcam path.
+
+### Not required today
+
+- No paid LLM or VLM API subscription.
+- No MQTT/NATS broker for the current roadmap.
+- No managed database service; SQLite is still the intended baseline.
+- No Unity subscription or other 3D-engine subscription unless you later build the synthetic 3D demo path.
+
+### Smallest realistic production setup
+
+For one parking area and one camera, the smallest credible deployment is:
+
+1. One fixed RTSP-capable IP camera
+2. One detector machine reading that stream
+3. One small VM or mini PC running backend + frontend + reverse proxy
+4. One `MapTiler` key
+5. One shared-secret auth key for detector ingest
+6. One backup plan for the SQLite database
+
+If the deployment stays private on a local network, you may not need a public domain. If it is internet-facing, add HTTPS, DNS, and a public hosting footprint.
+
+---
+
 ## Folder layout
 
 ```

@@ -21,7 +21,8 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 5. `P1.2` Fix SQLite coordinate upsert
 6. `P1.3` Build Phase 5 multi-camera foundation
 7. `P1.4` Clean up detector configuration ownership
-8. `P2` items only after the above are complete
+8. `P1.5` Define the production deployment baseline
+9. `P2` items only after the above are complete
 
 ## P0 — security and correctness
 
@@ -242,6 +243,61 @@ Stop mixing deployment endpoint configuration into the slot-geometry file.
 - A deployment can repoint the detector to another backend without editing `slots.json`.
 - The config contract is documented and reflected in `slots.example.json` and detector docs.
 
+### `P1.5` Define the production deployment baseline
+
+**Goal**
+
+Turn "what do we need to buy/create/run?" into an explicit deployment contract before production rollout.
+
+**Winning direction**
+
+- Keep the smallest production topology simple: camera -> detector -> backend/frontend.
+- Support both on-prem and cloud-hosted backend/frontend deployments.
+- Document the minimum required devices, services, secrets, and recurring subscriptions clearly enough that a non-author can provision them.
+
+**Required implementation**
+
+1. Production inventory
+   - Document the minimum required hardware roles:
+     - fixed camera per monitored area
+     - detector compute host
+     - backend/frontend host
+     - operator/admin browser device
+   - Document minimum expectations for camera capability, detector placement, storage persistence, and network reliability.
+
+2. Service dependencies
+   - Define the required runtime services for production:
+     - HTTPS reverse proxy
+     - DNS/domain when internet-facing
+     - environment/secrets management
+     - backup path for SQLite data
+   - Keep optional services clearly labeled as optional, not mandatory.
+
+3. Subscription dependencies
+   - Document that the frontend currently depends on a MapTiler key unless map tiles are self-hosted later.
+   - Distinguish demo/free-tier assumptions from production traffic assumptions.
+   - Make clear which items do not require paid subscriptions today.
+
+4. Deployment topology guidance
+   - Document the smallest credible single-camera production topology.
+   - Document when to separate detector and backend hosts.
+   - Document when multi-camera work becomes a prerequisite instead of an enhancement.
+   - Document temporary dev/test camera options such as an iPhone-published RTSP stream, while keeping fixed mounted cameras as the production expectation.
+
+**Likely files**
+
+- `README.md`
+- `backend/README.md`
+- `frontend/README.md`
+- deployment docs / Compose docs
+
+**Acceptance criteria**
+
+- A new deployer can list the required devices, services, and subscriptions without reverse-engineering the repo.
+- The docs distinguish mandatory production dependencies from optional upgrades.
+- The docs state clearly that the current codebase still requires `P0` and `P1` hardening work before public production exposure.
+- The docs explain that iPhone/mobile-camera streaming is acceptable for testing, but not a production camera substitute.
+
 ## P2 — quality, CI, and measured experiments
 
 ### `P2.1` Add CI
@@ -313,6 +369,55 @@ Make dwell-time features easier to demonstrate without polluting production beha
 ### `P3.3` Optional product-layer work
 
 - Add observability, operator tooling, and dashboard features only after the core system is secure, tested, and multi-camera capable.
+
+### `P3.4` Synthetic 3D street simulation and live visual overlay
+
+**Goal**
+
+Make the project more visually compelling for demos and development by adding a synthetic street scene with vehicles and pedestrians, while preserving the existing detector -> backend -> frontend architecture.
+
+**Winning direction**
+
+- Keep the map as the canonical operational view.
+- Add the 3D scene as a separate visual layer and synthetic camera producer, not as a rewrite of the frontend or detector.
+- Prefer a browser-native path first: `React + Three.js` for the initial implementation.
+- Treat Unity / Unreal / CARLA as optional later upgrades if realism requirements exceed what Three.js can deliver.
+
+**Required implementation**
+
+1. Frontend visual simulation
+   - Add an optional simulation view that renders a street / curbside parking scene with moving cars and pedestrians.
+   - Support basic scripted events such as cruise, park, idle, door-open, enter, exit, depart, and pedestrian crossing.
+   - Add YOLO-style bounding-box overlays for cars and people in the simulation view for visual support during demos.
+
+2. Synthetic event integration
+   - Drive spot-state updates from deterministic simulation events in development mode.
+   - Keep the current backend and WebSocket contracts stable unless a later roadmap item explicitly changes them.
+
+3. Synthetic camera stream path
+   - Design the simulation so its camera output can later be consumed as a real detector input.
+   - Prefer a bridge such as MediaMTX or an equivalent local media relay so the detector can subscribe through a normal video/stream interface.
+   - Keep the detector compatible with swapping from synthetic stream to physical camera stream without frontend rewrites.
+
+4. Modes and guardrails
+   - Keep the feature optional and dev/demo-oriented until the core roadmap is complete.
+   - Ensure the synthetic overlay path does not become the source of truth for occupancy in production.
+   - Document how to run the simulation-only demo, and how to switch later to detector-on-synthetic-stream mode.
+
+**Likely files / areas**
+
+- `frontend/src/` new simulation components and route/view toggles
+- optional new `simulation/` workspace or frontend-local simulation module
+- backend simulator integration docs
+- detector stream-ingest docs
+- `README.md`
+
+**Acceptance criteria**
+
+- A contributor can run a visually rich local demo that shows cars and pedestrians moving through a simulated street scene.
+- The demo can show YOLO-style rectangles around cars and people in real time.
+- The architecture preserves a clean path from synthetic stream now to real camera stream later.
+- The existing map flow remains intact and usable without the 3D simulation enabled.
 
 ## Done means done
 
