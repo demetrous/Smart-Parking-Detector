@@ -1,6 +1,8 @@
-# ParkingSpotter — Project Reassessment (Apr 2026)
+# ParkingSpotter — Project Reassessment (Apr 16, 2026)
 
 Here's my honest review after reading the README, todo, all three services, and the shared infra. Short version: **the architecture is genuinely solid and well-scoped for an MVP — this is the right shape of system.** What's missing is mostly production-hardening plus a handful of small tech-stack updates worth making before you tackle Phase 5.
+
+> **Update — Apr 16, 2026 (PM):** Added section **2.5** covering Gemma 4 (released Apr 2, 2026) and its implications for the detector/VLM stack, plus RF-DETR now listed alongside YOLO in section 2.1, and two new roadmap rows. Original P0/P1 priorities are unchanged — Gemma 4 is additive, not a replacement.
 
 ---
 
@@ -31,8 +33,8 @@ A few framing tweaks worth considering:
 
 ### Consider updating / replacing
 
-**1. YOLO11n → YOLO12 or a parking-specific fine-tune.**
-YOLO11 (Oct 2024) is fine, but Ultralytics released YOLO12 in early 2025 with attention-based improvements on small objects — which is exactly your problem (cars viewed from above, often occluded). Better still: take any YOLO variant and fine-tune it on **PKLot** or **CNRPark+EXT** directly; a 15-minute fine-tune typically adds 5–10 points of mAP on top-down parking footage vs. generic COCO weights.
+**1. YOLO11n → YOLO12, RF-DETR, or a parking-specific fine-tune.**
+YOLO11 (Oct 2024) is fine, but Ultralytics released YOLO12 in early 2025 with attention-based improvements on small objects — which is exactly your problem (cars viewed from above, often occluded). **RF-DETR** (Roboflow, Apache-2) is another credible swap: transformer-based, single-stage, often matches or beats YOLO on occluded targets, and is the detector being paired with Gemma 4 in most of the early-2026 demos (see section 2.5). Better still than either: take any of them and fine-tune on **PKLot** or **CNRPark+EXT** directly; a 15-minute fine-tune typically adds 5–10 points of mAP on top-down parking footage vs. generic COCO weights.
 
 **2. `react-map-gl` is dead weight.**
 Your `package.json` lists both `maplibre-gl` and `react-map-gl@8`, but your actual code (from what I can see in `ParkingMap.tsx` / `MapMarkers.tsx`) appears to use MapLibre directly. Either adopt `react-map-gl` fully (it genuinely simplifies the imperative map API) or drop it from dependencies — right now it's bundle bloat.
@@ -48,6 +50,36 @@ The detector currently runs PyTorch on the host. For actual deployment on a Jets
 
 **6. Docker compose file is slightly stale.**
 `version: "3.9"` at the top has been a no-op since Docker Compose v2 (2023). Drop it. Also, there are no actual `Dockerfile`s in `backend/`, `frontend/`, or `detector/` — the compose file references builds that don't exist.
+
+---
+
+## 2.5 Gemma 4 addendum (released Apr 2, 2026)
+
+Google dropped Gemma 4 two weeks ago. The community has already shown it running as a **local multimodal VLM** on everything from a Mac Studio (26B A4B MoE at ~300 t/s via `llama.cpp`) to a Pixel 10 Pro in airplane mode (E2B at 2.5 GB via LiteRT-LM) to a browser tab (`transformers.js` + WebGPU). MLX-VLM v0.4.3 shipped same-day support including SAM 3.1 and RF-DETR integration. Relevant to this project:
+
+**What Gemma 4 does *not* change**
+
+Gemma 4 is a **VLM, not an object detector** — it doesn't output bounding boxes natively. The occupancy pipeline still needs a dedicated detector (YOLO, RF-DETR, or similar) to produce the geometry that `_iou()` consumes. All P0/P1 items (auth on `POST /spots`, the `occupied_since_db` dwell bug, tests, MQTT, multi-camera) are unaffected; ship those first regardless.
+
+**What Gemma 4 *does* unlock**
+
+1. **A third "soon" signal — semantic cues.**
+   Today "soon" comes from (a) dwell-time stats and (b) ByteTrack centroid drift. Neither can see *intent*: reverse lights, driver-side door opening, a person walking toward a parked car with keys out. A Gemma 4 E4B pass — invoked only when a slot is `occupied` and already past ~50 % of its mean dwell — could produce these cues cheaply. Event-triggered, not per-frame, so cost stays bounded.
+
+2. **"Phone-as-detector" becomes a real SKU.**
+   Gemma 4 E2B (2.5 GB) + RF-DETR exported to TFLite runs fully on-device on recent phones. For a small private lot (5–20 spots), a lot owner could point their phone at the lot and run the *entire pipeline* locally — no backend install, no camera hardware, no homography calibration. That's a genuinely new product shape the Phase 5 multi-camera work doesn't address, and it's a much faster go-to-market than cloud/server deployment.
+
+3. **Natural-language popups.**
+   Today's popup shows "A1 · occupied · Navigate". A one-line VLM-generated caption ("White SUV, parked ~12 min, driver returning from store") turns a status pin into a scene description. Cheap to add once the VLM is already in the pipeline for signal #1.
+
+4. **Cheaper, more robust privacy masking (Phase 7).**
+   I originally suggested a narrow face/plate cascade. A VLM prompt ("return bboxes for any human faces or licence plates visible") generalises across camera angles, lighting, and occlusion patterns much better than a single-purpose classifier. Only needs to run on frames being stored or exported, not live.
+
+**Caveats before committing**
+
+- The capability claims above are sourced from social-media demos (`evolving.ai` Instagram carousel, Apr 4, 2026). Numbers like "300 t/s on M2 Ultra" and "airplane-mode VLM on Pixel 10 Pro" are credible but not independently verified here. Confirm against Google's official Gemma 4 tech report and the MLX-VLM / `llama.cpp` release notes before any stack decision.
+- MoE architectures advertise their active-parameter count (4B for 26B A4B) but still need the full weight set in RAM/VRAM (~26 GB). This matters if you're targeting a Jetson Orin Nano (8 GB) — the E2B / E4B variants are the realistic edge targets, not 26B A4B.
+- Running a VLM on top of YOLO/RF-DETR roughly **doubles compute** per invoked frame. The right pattern is event-triggered inference (gated on geometric signals), not per-frame. Budget for this in the detector's frame-skip logic.
 
 ---
 
@@ -84,11 +116,13 @@ Your current Phase 5 → 6 → 7 ordering is reasonable, but I'd reshuffle:
 | **P1** | Phase 5 (multi-camera + homography) | Your roadmap priority |
 | **P1** | Write the missing Dockerfiles | Compose file is a lie without them |
 | **P2** | Operator dashboard (utilisation charts, heatmap) | First real "product" surface |
-| **P2** | YOLO fine-tune on PKLot | Biggest accuracy win per hour invested |
+| **P2** | YOLO / RF-DETR fine-tune on PKLot | Biggest accuracy win per hour invested |
 | **P2** | Drop `react-map-gl` or commit to it | Clean up bundle |
+| **P2** | Prototype Gemma 4 E4B "semantic soon" pass | Event-triggered VLM — third "soon" signal (see §2.5) |
 | **P3** | Phase 6 synthetic stream (Three.js → MediaMTX → RTSP) | Test-infra investment |
 | **P3** | Alembic migrations, `/metrics`, structured logs | Production-hardening bundle |
 | **P3** | ONNX/TensorRT export docs | Edge-deployment path |
+| **P3** | "Phone-as-detector" SKU (Gemma 4 E2B + RF-DETR via LiteRT) | New small-lot product shape (see §2.5) |
 
 ---
 
