@@ -1,5 +1,6 @@
 {
   "default_priority": ["cam_1", "cam_2"],
+  "max_observation_age_seconds": 60,
   "per_spot": {
     "A1": ["cam_1", "cam_2"]
   }

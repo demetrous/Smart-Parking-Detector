@@ -1,0 +1,11 @@
+# Example Ultralytics dataset config for YOLO11 parking fine-tuning.
+# Replace paths/classes with your PKLot or pilot-camera export.
+path: ../datasets/parking
+train: images/train
+val: images/val
+
+names:
+  0: car
+  1: truck
+  2: bus
+  3: motorcycle

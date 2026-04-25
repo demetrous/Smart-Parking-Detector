@@ -24,7 +24,9 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 8. `P1.5` Define the production deployment baseline `Completed Apr 18, 2026`
 9. `P2.1` Add CI `Completed Apr 18, 2026`
 10. `P2.3` Improve non-production dwell demos `Completed Apr 18, 2026`
-11. Remaining `P2`+ items (e.g. `P2.2` detector fine-tuning)
+11. `P2.2` Detector benchmark + YOLO11 fine-tuning workflow `Completed Apr 24, 2026`
+12. `P3.3` Pilot product-layer endpoints `Completed Apr 24, 2026`
+13. `P3.4` Synthetic 3D street simulation and live visual overlay `Completed Apr 24, 2026`
 
 ## P0 — security and correctness
 
@@ -401,6 +403,14 @@ Improve detector quality without paying the integration cost of a new detector f
 - The experiment produces a small report with baseline vs tuned metrics.
 - Any proposal to switch detector families includes measured justification, not model hype.
 
+**Progress**
+
+- [x] `detector/benchmark.py` measures YOLO11 latency/FPS, status counts, and optional labeled occupied-vs-not-occupied precision/recall/accuracy.
+- [x] `detector/fine_tune_yolo11.py` provides a repeatable Ultralytics YOLO11 fine-tuning command.
+- [x] `detector/parking_dataset.example.yaml` and `detector/benchmark_report.example.json` document dataset/report shapes for PKLot or pilot-camera workflows.
+- [x] `detector/README.md` documents the baseline -> fine-tune -> tuned benchmark comparison flow.
+- [x] Tests cover benchmark metric helpers and JSONL label loading.
+
 ### `P2.3` Improve non-production dwell demos
 
 **Goal**
@@ -439,6 +449,13 @@ Make dwell-time features easier to demonstrate without polluting production beha
 ### `P3.3` Optional product-layer work
 
 - Add observability, operator tooling, and dashboard features only after the core system is secure, tested, and multi-camera capable.
+
+**Progress**
+
+- [x] `GET /analytics/summary` returns status counts, available ratio, dwell readiness, and per-spot dwell stats for pilot dashboards.
+- [x] `GET /cameras` reports camera last-observed time, stale/online state, and observed spot counts.
+- [x] `GET /spots.csv` exports canonical spot state for spreadsheet/dashboard integrations.
+- [x] Backend/root docs describe the pilot endpoints and privacy posture.
 
 ### `P3.4` Synthetic 3D street simulation and live visual overlay
 
@@ -488,6 +505,12 @@ Make the project more visually compelling for demos and development by adding a 
 - The demo can show YOLO-style rectangles around cars and people in real time.
 - The architecture preserves a clean path from synthetic stream now to real camera stream later.
 - The existing map flow remains intact and usable without the 3D simulation enabled.
+
+**Progress**
+
+- [x] `frontend/src/components/SimulationView.tsx` renders a Three.js synthetic street scene with scripted moving car, parked car, pedestrian crossing, and YOLO-style overlay boxes.
+- [x] `frontend/src/App.tsx` adds a toolbar toggle between the canonical map and synthetic demo while leaving map behavior intact.
+- [x] `frontend/README.md` and root `README.md` document that the 3D view is demo-only and backend/WebSocket spot state remains the source of truth.
 
 ## Done means done
 

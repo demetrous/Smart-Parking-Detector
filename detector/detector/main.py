@@ -76,11 +76,21 @@ def post_spot(
     raw_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     try:
         with httpx.Client(timeout=3.0) as client:
-            client.post(
+            response = client.post(
                 f"{backend_url}/spots",
                 content=raw_body,
                 headers=signed_headers(raw_body),
             )
+            response.raise_for_status()
+            log.debug("Posted spot %s update successfully", slot_id)
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text[:300]
+        log.warning(
+            "Backend rejected spot %s update with HTTP %s: %s",
+            slot_id,
+            exc.response.status_code,
+            body,
+        )
     except Exception as exc:
         log.warning("Failed to post spot %s: %s", slot_id, exc)
 

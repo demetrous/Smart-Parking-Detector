@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
@@ -8,8 +8,8 @@ ARG VITE_MAPTILER_KEY=
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_MAPTILER_KEY=$VITE_MAPTILER_KEY
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
 RUN npm run build

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import statistics
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Iterable
 
 import aiosqlite
+
+log = logging.getLogger(__name__)
 
 DB_PATH = Path(os.getenv("DB_PATH", "parking.db"))
 _ACTIVE_SESSION_STATUSES = {"occupied", "soon"}
@@ -33,6 +36,12 @@ CREATE TABLE IF NOT EXISTS spot_history (
 )
 """
 
+_INDEX_HISTORY_SPOT_TIME = """
+CREATE INDEX IF NOT EXISTS idx_spot_history_spot_id_time
+ON spot_history (spot_id, recorded_at)
+"""
+
+
 _CREATE_OBSERVATIONS = """
 CREATE TABLE IF NOT EXISTS spot_observations (
     spot_id     TEXT NOT NULL,
@@ -52,6 +61,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_SPOTS)
         await db.execute(_CREATE_HISTORY)
         await db.execute(_CREATE_OBSERVATIONS)
+        await db.execute(_INDEX_HISTORY_SPOT_TIME)
         await db.commit()
 
 
@@ -99,8 +109,18 @@ async def seed_dwell_demo_sparse(spot_ids: list[str], min_completed_sessions: in
             t += timedelta(minutes=2)
 
 
-async def upsert_spot_db(spot) -> None:  # type: ignore[no-untyped-def]
-    """Persist current state and append a history record."""
+async def upsert_spot_db(
+    spot,
+    *,
+    history_recorded_at: datetime | None = None,
+) -> None:  # type: ignore[no-untyped-def]
+    """Persist current state and append a history record.
+
+    By default, ``recorded_at`` for ``spot_history`` is wall-clock now so the event
+    log stays chronologically ordered even when merged observations carry older
+    ``updatedAt``. Tests may pass *history_recorded_at* explicitly.
+    """
+    history_at = history_recorded_at or datetime.now(timezone.utc)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
@@ -129,7 +149,7 @@ async def upsert_spot_db(spot) -> None:  # type: ignore[no-untyped-def]
             INSERT INTO spot_history (spot_id, status, confidence, recorded_at)
             VALUES (?, ?, ?, ?)
             """,
-            (spot.id, spot.status, spot.confidence, spot.updatedAt.isoformat()),
+            (spot.id, spot.status, spot.confidence, history_at.isoformat()),
         )
         await db.commit()
 
@@ -143,7 +163,8 @@ async def load_spots_db() -> list[tuple]:
             ) as cursor:
                 return await cursor.fetchall()
     except Exception:
-        return []
+        log.exception("Failed to load spots from %s", DB_PATH)
+        raise
 
 
 async def upsert_observation_db(spot) -> None:  # type: ignore[no-untyped-def]
@@ -185,7 +206,8 @@ async def load_observations_db() -> list[tuple]:
             ) as cursor:
                 return await cursor.fetchall()
     except Exception:
-        return []
+        log.exception("Failed to load spot_observations from %s", DB_PATH)
+        raise
 
 
 def _parse_recorded_at(raw: str) -> datetime:

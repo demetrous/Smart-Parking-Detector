@@ -5,10 +5,12 @@ import os
 import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import AsyncGenerator
+from collections.abc import Coroutine
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from .auth import HEADER_SIGNATURE, HEADER_TIMESTAMP, verify_signed_detector_request
 from .db import (
@@ -25,6 +27,14 @@ from .store import SpotStore
 
 store = SpotStore()
 hub = Hub()
+
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _spawn_background(coro: Coroutine[Any, Any, None]) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 def _env_truthy(key: str) -> bool:
@@ -77,6 +87,7 @@ async def simulator_loop() -> None:
 _SOON_THRESHOLD = float(os.getenv("SOON_THRESHOLD", "0.7"))
 _DWELL_MIN_COUNT = int(os.getenv("DWELL_MIN_COUNT", "3"))
 _DWELL_CHECK_INTERVAL = float(os.getenv("DWELL_CHECK_INTERVAL", "15.0"))
+_CAMERA_OFFLINE_AFTER_SECONDS = float(os.getenv("CAMERA_OFFLINE_AFTER_SECONDS", "120"))
 
 
 async def dwell_checker_loop() -> None:
@@ -98,7 +109,10 @@ async def dwell_checker_loop() -> None:
             since = await occupied_since_db(spot.id)
             if since is None:
                 continue
-            elapsed = (datetime.now(timezone.utc) - since).total_seconds()
+            elapsed = max(
+                0.0,
+                (datetime.now(timezone.utc) - since).total_seconds(),
+            )
             if elapsed >= _SOON_THRESHOLD * dwell["mean"]:
                 updated = spot.model_copy(
                     update={
@@ -150,9 +164,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await seed_dwell_demo_sparse(["A1", "B2", "C1"], target)
 
     if _simulator_enabled():
-        asyncio.create_task(simulator_loop())
+        _spawn_background(simulator_loop())
     if _dwell_checker_enabled():
-        asyncio.create_task(dwell_checker_loop())
+        _spawn_background(dwell_checker_loop())
     yield
 
 
@@ -193,6 +207,94 @@ def create_app() -> FastAPI:
         enough data yet for reliable "soon" predictions.
         """
         return await query_dwell_db(spot_id)
+
+    @app.get("/analytics/summary")
+    async def analytics_summary() -> dict:
+        """Pilot-facing current utilization and dwell-readiness summary."""
+        spots = await store.list_canonical()
+        status_counts: dict[str, int] = {"available": 0, "soon": 0, "occupied": 0}
+        dwell_ready = 0
+        dwell_by_spot: dict[str, dict] = {}
+        for spot in spots:
+            status_counts[spot.status] = status_counts.get(spot.status, 0) + 1
+            dwell = await query_dwell_db(spot.id)
+            dwell_by_spot[spot.id] = dwell
+            if dwell["count"] >= _DWELL_MIN_COUNT:
+                dwell_ready += 1
+
+        total = len(spots)
+        available_now = status_counts.get("available", 0)
+        return {
+            "totalSpots": total,
+            "statusCounts": status_counts,
+            "availableRatio": round(available_now / total, 4) if total else None,
+            "dwellReadySpots": dwell_ready,
+            "dwellMinCount": _DWELL_MIN_COUNT,
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "dwellBySpot": dwell_by_spot,
+        }
+
+    @app.get("/cameras")
+    async def camera_health(
+        offline_after_seconds: float = Query(
+            _CAMERA_OFFLINE_AFTER_SECONDS,
+            gt=0,
+            description="Seconds without an observation before a camera is marked offline",
+        )
+    ) -> list[dict]:
+        """Return last-observation health for each reporting camera."""
+        now = datetime.now(timezone.utc)
+        cameras: dict[str, dict] = {}
+        for spot_id, camera_id, _lat, _lng, status, _conf, raw_updated_at in await load_observations_db():
+            updated_at = datetime.fromisoformat(raw_updated_at)
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            age_seconds = max(0.0, (now - updated_at.astimezone(timezone.utc)).total_seconds())
+            current = cameras.get(camera_id)
+            if current is None or updated_at > current["_updatedAt"]:
+                observed_spots = {spot_id}
+                if current is not None:
+                    observed_spots.update(current["observedSpots"])
+                cameras[camera_id] = {
+                    "cameraId": camera_id,
+                    "lastObservedAt": updated_at.isoformat(),
+                    "ageSeconds": round(age_seconds, 2),
+                    "online": age_seconds <= offline_after_seconds,
+                    "observedSpots": observed_spots,
+                    "lastStatus": status,
+                    "_updatedAt": updated_at,
+                }
+            else:
+                current["observedSpots"].add(spot_id)
+
+        result: list[dict] = []
+        for camera in cameras.values():
+            observed = sorted(camera.pop("observedSpots"))
+            camera.pop("_updatedAt", None)
+            camera["observedSpotCount"] = len(observed)
+            camera["observedSpots"] = observed
+            result.append(camera)
+        return sorted(result, key=lambda c: c["cameraId"])
+
+    @app.get("/spots.csv")
+    async def export_spots_csv() -> Response:
+        """CSV export for pilot dashboards and spreadsheet workflows."""
+        rows = ["id,status,lat,lng,confidence,camera_id,updated_at"]
+        for spot in await store.list_canonical():
+            rows.append(
+                ",".join(
+                    [
+                        spot.id,
+                        spot.status,
+                        str(spot.lat),
+                        str(spot.lng),
+                        str(spot.confidence),
+                        spot.cameraId or "",
+                        spot.updatedAt.isoformat(),
+                    ]
+                )
+            )
+        return Response("\n".join(rows) + "\n", media_type="text/csv")
 
     @app.post("/spots")
     async def upsert_spot(request: Request) -> dict:

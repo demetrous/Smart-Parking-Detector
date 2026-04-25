@@ -20,6 +20,7 @@ function extraNodeModulesResolve(roots: string[]): Plugin {
   if (markers.length === 0) {
     return { name: 'extra-node-modules-skipped', resolveId: () => null }
   }
+  const projectRequire = createRequire(path.resolve('package.json'))
   const requires = markers.map((m) => createRequire(m))
   return {
     name: 'extra-node-modules',
@@ -32,6 +33,12 @@ function extraNodeModulesResolve(roots: string[]): Plugin {
         || path.isAbsolute(id)
       ) {
         return null
+      }
+      try {
+        projectRequire.resolve(id)
+        return null
+      } catch {
+        /* use fallback roots below */
       }
       for (const req of requires) {
         try {

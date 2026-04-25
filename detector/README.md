@@ -134,6 +134,23 @@ python -m detector.main --source rtsp://192.168.1.10/stream
 python -m detector.main --source 0 --preview
 ```
 
+### Serve YOLO boxes for the 3D simulation
+
+The frontend's synthetic 3D street scene can capture its Three.js canvas and
+send frames to a local detector HTTP service. Start it before clicking **Start
+YOLO feed** in the 3D view:
+
+```powershell
+cd detector
+pip install -r requirements.txt
+python -m detector.server --model yolo11n.pt --port 8010
+```
+
+The service exposes:
+
+- `GET /health`
+- `POST /detect?conf=0.2` with a raw JPEG/PNG/WebP body, returning vehicle boxes in image pixels
+
 ## CLI flags
 
 | Flag | Default | Description |
@@ -173,6 +190,53 @@ Current detector tests avoid real cameras, GPUs, and model downloads by stubbing
 
 - slot-overlap threshold behavior
 - debounce-driven status transitions
+
+## Benchmarking YOLO11 on real or public footage
+
+Use `benchmark.py` to measure the current YOLO11 baseline before fine-tuning or
+trying another detector family. Start with PKLot frames or still frames sampled
+from a pilot camera, plus a `slots.json` drawn for those frames.
+
+```bash
+python benchmark.py --frames-dir ./benchmark_frames --config slots.json --model yolo11n.pt
+```
+
+For accuracy metrics, add JSON Lines labels:
+
+```json
+{"image":"frame001.jpg","spots":{"A1":"occupied","A2":"available"}}
+```
+
+Then run:
+
+```bash
+python benchmark.py --frames-dir ./benchmark_frames --config slots.json --labels labels.jsonl --output report.json
+```
+
+The report includes mean/median latency, FPS, status counts, and binary
+occupied-vs-not-occupied precision/recall/accuracy. `soon` is treated as
+occupied for benchmark metrics.
+
+### Fine-tuning workflow
+
+Fine-tune only after saving a baseline report on the exact validation frames you
+will use for comparison. Prepare an Ultralytics dataset YAML from PKLot or pilot
+camera labels; `parking_dataset.example.yaml` shows the expected shape.
+
+```bash
+python fine_tune_yolo11.py --data parking_dataset.yaml --model yolo11n.pt --epochs 50 --output train-summary.json
+```
+
+Then benchmark the tuned weights against the same labeled frames:
+
+```bash
+python benchmark.py --frames-dir ./benchmark_frames --config slots.json --labels labels.jsonl --model yolo11n.pt --output reports/yolo11n-baseline.json
+python benchmark.py --frames-dir ./benchmark_frames --config slots.json --labels labels.jsonl --model runs/parking-spotter/yolo11-parking/weights/best.pt --output reports/yolo11n-parking-tuned.json
+```
+
+Use `benchmark_report.example.json` as the comparison report template. Do not
+switch detector families unless the tuned YOLO11 result still misses the agreed
+precision/recall/latency target.
 
 ## How occupancy works
 

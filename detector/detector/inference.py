@@ -175,6 +175,10 @@ class OccupancyDetector:
         else:
             self._process_plain(frame)
 
+    def snapshot_statuses(self) -> dict[str, SpotStatus]:
+        """Return the detector's current status per configured slot."""
+        return {slot_id: state.current_status for slot_id, state in self._states.items()}
+
     def annotate_frame(self, frame: np.ndarray) -> np.ndarray:
         """Draw slot polygons and status labels on a copy of the frame."""
         out = frame.copy()

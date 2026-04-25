@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -84,3 +84,51 @@ async def test_legacy_post_without_camera_id_updates_canonical_only(
 
     obs_rows = await db.load_observations_db()
     assert obs_rows == []
+
+
+@pytest.mark.anyio
+async def test_merge_skips_stale_priority_camera(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    merge_path = tmp_path / "merge.json"
+    merge_path.write_text(
+        json.dumps(
+            {
+                "default_priority": ["cam_1", "cam_2"],
+                "max_observation_age_seconds": 30,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MERGE_CONFIG_PATH", str(merge_path))
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "parking.db")
+    await db.init_db()
+
+    store = SpotStore()
+    now = datetime.now(timezone.utc)
+    await store.apply_detector_update(
+        Spot(
+            id="A1",
+            lat=1.0,
+            lng=2.0,
+            status="occupied",
+            confidence=0.9,
+            updatedAt=now - timedelta(minutes=5),
+            cameraId="cam_1",
+        )
+    )
+    changed, canonical = await store.apply_detector_update(
+        Spot(
+            id="A1",
+            lat=1.0,
+            lng=2.0,
+            status="available",
+            confidence=0.95,
+            updatedAt=now,
+            cameraId="cam_2",
+        )
+    )
+
+    assert changed
+    assert canonical.status == "available"
+    assert canonical.cameraId == "cam_2"

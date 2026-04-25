@@ -71,6 +71,7 @@ A web application built with React that shows a **MapLibre GL** interactive map 
 - When you click a pin: shows the spot ID, current status, and a "Navigate" link that opens Google Maps directions to that exact spot
 - Has a dark/light theme toggle
 - Shows a red "Offline" pill in the corner if the connection to the backend is lost, and automatically reconnects with exponential back-off (waits 1 s, then 2 s, then 4 s… up to 30 s between attempts)
+- Includes an optional browser-native Three.js synthetic street demo for presentations, while the map remains the operational source of truth
 
 ---
 
@@ -244,6 +245,19 @@ Notes:
 - The detector profile defaults to a bundled sample-video loop so the optional service can start without a real camera.
 - For a real camera, override the detector command and provide an appropriate `slots.json`.
 
+Synthetic demo note: the frontend cube button opens the optional 3D street scene
+with scripted vehicles, pedestrians, and YOLO-style boxes. It is a visual demo
+layer only; production occupancy still flows from detector -> backend -> map.
+For real YOLO boxes on the 3D canvas, start the optional detector HTTP service:
+
+```powershell
+cd detector
+pip install -r requirements.txt
+python -m detector.server --model yolo11n.pt --port 8010
+```
+
+Then click **Start YOLO feed** in the 3D view.
+
 ---
 
 ## Automated tests
@@ -334,6 +348,8 @@ Treat this as **suitable for private pilots and on-prem experiments**, not as a 
   - `POST /spots` is HMAC-authenticated; production deploys must set `PARKINGSPOTTER_SHARED_SECRET` on both services.
 - **Backups**
   - SQLite is acceptable for the current MVP, but `parking.db` must be backed up regularly because it contains current state and dwell history.
+- **Privacy**
+  - The backend stores spot status metadata, not raw video or license plates. Keep camera streams and any retained footage governed by the detector/site privacy policy.
 
 ### Required subscriptions / accounts
 
@@ -507,6 +523,9 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 | `GET` | `/spots` | Returns the merged canonical view of all spots; use `?camera=<camera_id>` for that camera’s last observations only |
 | `POST` | `/spots` | Update or create a spot (used by the detector) |
 | `GET` | `/spots/{id}/dwell` | Returns historical dwell-time stats for one spot: `{count, mean, stddev}` in seconds |
+| `GET` | `/analytics/summary` | Returns current utilization, status counts, dwell readiness, and per-spot dwell stats for pilot dashboards |
+| `GET` | `/cameras` | Returns per-camera health, last-observed time, stale/online state, and observed spot counts |
+| `GET` | `/spots.csv` | Exports the current canonical spot state as CSV for spreadsheet or dashboard integrations |
 | `WS` | `/ws` | WebSocket connection — the frontend subscribes here for live updates |
 
 ---

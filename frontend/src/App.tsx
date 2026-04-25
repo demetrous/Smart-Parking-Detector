@@ -1,10 +1,12 @@
 import { ThemeProvider, useTheme } from './components/ThemeProvider';
 import ParkingMap from './components/ParkingMap';
-import { SunIcon, MoonIcon, SignalSlashIcon } from '@heroicons/react/24/solid';
+import SimulationView from './components/SimulationView';
+import { SunIcon, MoonIcon, SignalSlashIcon, CubeTransparentIcon, MapIcon } from '@heroicons/react/24/solid';
 import clsx from 'clsx';
+import { useState } from 'react';
 import { useSpots } from './state/SpotsProvider';
 
-function Toolbar() {
+function Toolbar({ view, setView }: { view: 'map' | 'simulation'; setView: (view: 'map' | 'simulation') => void }) {
   const { theme, toggle } = useTheme();
   const { connected } = useSpots();
   const isDark = theme === 'dark';
@@ -28,6 +30,14 @@ function Toolbar() {
       >
         {isDark ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
       </button>
+      <button
+        className={clsx(btnClass, 'ml-1')}
+        onClick={() => setView(view === 'map' ? 'simulation' : 'map')}
+        aria-label={view === 'map' ? 'Show synthetic simulation' : 'Show map'}
+        title={view === 'map' ? 'Show synthetic simulation' : 'Show map'}
+      >
+        {view === 'map' ? <CubeTransparentIcon className="h-5 w-5" /> : <MapIcon className="h-5 w-5" />}
+      </button>
       {!connected && (
         <div
           className={clsx(
@@ -48,6 +58,7 @@ function Toolbar() {
 }
 
 function Shell() {
+  const [view, setView] = useState<'map' | 'simulation'>('map');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const legendClass = clsx(
@@ -58,9 +69,9 @@ function Shell() {
   );
   return (
     <main className="h-dvh w-full">
-      <ParkingMap />
-      <Toolbar />
-      <div className={legendClass}>
+      {view === 'map' ? <ParkingMap /> : <SimulationView />}
+      <Toolbar view={view} setView={setView} />
+      <div className={clsx(legendClass, view === 'simulation' && 'hidden md:block')}>
         <div className="flex items-center gap-3">
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" aria-hidden /> Available
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 ml-3" aria-hidden /> Soon

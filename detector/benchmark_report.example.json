@@ -1,0 +1,14 @@
+{
+  "baseline": {
+    "model": "yolo11n.pt",
+    "report": "reports/yolo11n-baseline.json"
+  },
+  "tuned": {
+    "model": "runs/parking-spotter/yolo11-parking/weights/best.pt",
+    "report": "reports/yolo11n-parking-tuned.json"
+  },
+  "decision": {
+    "preferredModel": "yolo11n.pt",
+    "reason": "Replace after comparing precision, recall, accuracy, median latency, and FPS on the same labeled frames."
+  }
+}

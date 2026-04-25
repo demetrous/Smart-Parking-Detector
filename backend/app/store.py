@@ -93,7 +93,7 @@ class SpotStore:
         async with self._lock:
             return [
                 obs.model_copy()
-                for (sid, cam), obs in self._observations.items()
+                for (_, cam), obs in self._observations.items()
                 if cam == camera_id
             ]
 

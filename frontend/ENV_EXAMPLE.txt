@@ -6,3 +6,6 @@ VITE_MAPTILER_KEY=your_maptiler_key_here
 
 # Backend base URL (default points to local FastAPI)
 VITE_API_URL=http://127.0.0.1:8000
+
+# Optional YOLO detector service used by the synthetic 3D demo "YOLO feed" button
+VITE_DETECTOR_URL=http://127.0.0.1:8010

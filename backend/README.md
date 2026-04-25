@@ -60,6 +60,7 @@ Current backend coverage includes:
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | — | Required in production for signed `POST /spots` (must match detector) |
 | `MERGE_CONFIG_PATH` | — | Optional JSON merge rules for multi-camera (`backend/merge.example.json`) |
+| `CAMERA_OFFLINE_AFTER_SECONDS` | `120` | Default stale-camera threshold used by `GET /cameras` |
 | `PARKINGSPOTTER_SEED_DWELL_DEMO` | — | If `true`/`1`/`on`, inserts **past** synthetic `spot_history` for demo spots so dwell stats populate quickly (**dev/demo only**). |
 | `PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR` | — | If `true`, runs the dwell “soon” checker even when `SIMULATOR=true` (default is simulator **or** checker, not both). |
 
@@ -85,6 +86,15 @@ Returns the current list of all parking spots.
 ]
 ```
 
+### `GET /analytics/summary`
+Returns pilot-facing utilization: current status counts, available ratio, dwell readiness, and dwell stats per spot.
+
+### `GET /cameras`
+Returns one row per reporting camera with `lastObservedAt`, `ageSeconds`, `online`, `observedSpotCount`, and `observedSpots`. Use `?offline_after_seconds=...` to tune the stale-camera threshold per deployment.
+
+### `GET /spots.csv`
+Exports the current canonical spot state as CSV for spreadsheet workflows, dashboard imports, and quick pilot integrations.
+
 ### `POST /spots`
 Upsert a spot. Used by the detector to push state changes. The backend persists the update to SQLite and broadcasts a `spot.update` event to all WebSocket clients.
 
@@ -106,6 +116,10 @@ Two SQLite tables:
 
 - **`spots`** — current state mirror, one row per spot. Restored on restart so the map is never empty.
 - **`spot_history`** — append-only log of every status change. Foundation for dwell-time "soon" predictions in Phase 3.
+
+## Privacy posture for pilots
+
+The backend stores spot IDs, coordinates, statuses, confidence, camera IDs, and timestamps. It does **not** store raw video frames or license plate data. Keep raw camera streams inside the detector environment unless a deployment has an explicit retention and privacy policy.
 
 ## Module layout
 

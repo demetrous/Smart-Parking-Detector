@@ -26,7 +26,8 @@ async def _write_spot_history(
                 confidence=0.9,
                 updatedAt=updated_at,
                 cameraId="cam_1",
-            )
+            ),
+            history_recorded_at=updated_at,
         )
 
 

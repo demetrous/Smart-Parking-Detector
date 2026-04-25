@@ -55,3 +55,58 @@ async def test_upsert_spot_db_refreshes_coordinates_and_appends_history(
 
     assert spot_row == (47.7, -122.3, "available", 0.92, "cam_2")
     assert history_count == (2,)
+
+
+@pytest.mark.anyio
+async def test_spot_history_has_spot_time_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "parking.db"
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+
+    await db.init_db()
+
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+            ("idx_spot_history_spot_id_time",),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    assert row == ("idx_spot_history_spot_id_time",)
+
+
+@pytest.mark.anyio
+async def test_upsert_spot_db_history_defaults_to_wall_clock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "parking.db"
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    await db.init_db()
+
+    stale_observation_time = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    before = datetime.now(timezone.utc)
+    await db.upsert_spot_db(
+        Spot(
+            id="A1",
+            lat=47.62319,
+            lng=-122.3546,
+            status="occupied",
+            confidence=0.8,
+            updatedAt=stale_observation_time,
+            cameraId="cam_1",
+        )
+    )
+    after = datetime.now(timezone.utc)
+
+    async with aiosqlite.connect(db_path) as conn:
+        async with conn.execute(
+            "SELECT recorded_at FROM spot_history WHERE spot_id = ?",
+            ("A1",),
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    recorded_at = datetime.fromisoformat(row[0])
+    assert before <= recorded_at <= after

@@ -44,6 +44,34 @@ The `.gdriveignore` file at the repo root also excludes `node_modules/` and othe
 The app connects to the backend at `VITE_API_URL` (default `http://127.0.0.1:8000`).
 If the backend is not running, the map still loads with an empty spot list.
 
+## Synthetic 3D demo
+
+Use the cube button in the top-left toolbar to switch from the canonical map to
+the optional synthetic street scene. It renders a browser-native Three.js demo
+with scripted car movement, parking, pedestrian crossing, and YOLO-style overlay
+boxes for presentations.
+
+The 3D view is intentionally demo-only: backend/WebSocket spot state remains the
+operational source of truth. A future synthetic-camera stream can reuse this
+scene via a local media bridge such as MediaMTX without changing the real camera
+detector path.
+
+### Live YOLO feed from the 3D canvas
+
+The 3D scene can send browser-captured frames to the detector HTTP service and
+draw real YOLO boxes instead of scripted demo boxes.
+
+Start the detector service in a separate terminal:
+
+```powershell
+cd ../detector
+pip install -r requirements.txt
+python -m detector.server --model yolo11n.pt --port 8010
+```
+
+Then open the 3D view and click **Start YOLO feed**. If the service is not
+running, the scene falls back to scripted boxes and shows `detector offline`.
+
 ## Build
 
 ```bash
@@ -81,6 +109,7 @@ The frontend container serves the built static app on `http://localhost:5173`.
 |----------|---------|-------------|
 | `VITE_MAPTILER_KEY` | — | MapTiler API key (required) |
 | `VITE_API_URL` | `http://127.0.0.1:8000` | Backend base URL |
+| `VITE_DETECTOR_URL` | `http://127.0.0.1:8010` | Optional YOLO HTTP detector for 3D simulation frames |
 
 ## Source layout
 
@@ -89,6 +118,7 @@ src/
 ├── components/
 │   ├── ParkingMap.tsx    # MapLibre map; switches style URL for light/dark
 │   ├── MapMarkers.tsx    # SVG pin markers + popup (spot name, status, Navigate)
+│   ├── SimulationView.tsx # Optional Three.js synthetic street demo
 │   └── ThemeProvider.tsx # Light/dark context; persists to localStorage
 ├── state/
 │   └── SpotsProvider.tsx # Fetches initial spots + subscribes to WS updates
