@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "camera_id": "first_ave_fixed_view",
+  "frame_size": [1920, 1080],
+  "reference_points": [
+    {
+      "id": "nw_building_corner",
+      "label": "Northwest building corner visible in street view and map",
+      "pixel": [312, 214],
+      "lat": 47.62294,
+      "lng": -122.35236
+    },
+    {
+      "id": "intersection_corner",
+      "label": "Crosswalk/intersection curb corner",
+      "pixel": [1512, 698],
+      "lat": 47.62241,
+      "lng": -122.35186
+    },
+    {
+      "id": "south_curb_point",
+      "label": "Known curb point on parking lane",
+      "pixel": [468, 874],
+      "lat": 47.62221,
+      "lng": -122.35244
+    },
+    {
+      "id": "east_curb_point",
+      "label": "Opposite curb or lane edge point",
+      "pixel": [1420, 842],
+      "lat": 47.62218,
+      "lng": -122.35195
+    }
+  ],
+  "parking_slots": [
+    {
+      "id": "1ST-01",
+      "lat": 47.62238,
+      "lng": -122.35228,
+      "polygon": [[432, 692], [722, 664], [816, 806], [486, 854]]
+    },
+    {
+      "id": "1ST-02",
+      "lat": 47.62231,
+      "lng": -122.35218,
+      "polygon": [[744, 660], [1008, 640], [1122, 760], [836, 804]]
+    }
+  ],
+  "scale_reference_meters": {
+    "pixelA": [432, 692],
+    "pixelB": [722, 664],
+    "meters": 6.0
+  }
+}

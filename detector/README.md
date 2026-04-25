@@ -134,22 +134,52 @@ python -m detector.main --source rtsp://192.168.1.10/stream
 python -m detector.main --source 0 --preview
 ```
 
-### Serve YOLO boxes for the 3D simulation
+### Serve YOLO boxes for the hybrid/3D UI
 
-The frontend's synthetic 3D street scene can capture its Three.js canvas and
-send frames to a local detector HTTP service. Start it before clicking **Start
-YOLO feed** in the 3D view:
+The frontend's hybrid street/map view and synthetic 3D scene can send screenshots
+or sampled video frames to a local detector HTTP service. Start it before using
+the top-pane detection controls:
 
 ```powershell
 cd detector
 pip install -r requirements.txt
+$env:PARKINGSPOTTER_SHARED_SECRET="change-me"  # same value as backend, required for /spots/sync
 python -m detector.server --model yolo11n.pt --port 8010
 ```
 
 The service exposes:
 
 - `GET /health`
-- `POST /detect?conf=0.2` with a raw JPEG/PNG/WebP body, returning vehicle boxes in image pixels
+- `POST /detect?conf=0.2&include_people=true` with a raw JPEG/PNG/WebP body, returning people/vehicle boxes in image pixels
+- `POST /geometry/lines` with a raw image body, returning experimental Hough line segments for curbs/buildings/pavement edges
+- `POST /spots/sync` with calibrated slot statuses, signing and forwarding them to the backend `/spots` endpoint
+
+### Street calibration JSON
+
+Use `street_calibration.example.json` as the starting point for fixed street
+screenshots or stable video. The same pixel coordinate system is used for anchor
+points and parking-slot polygons:
+
+```json
+{
+  "camera_id": "first_ave_fixed_view",
+  "frame_size": [1920, 1080],
+  "reference_points": [
+    { "pixel": [312, 214], "lat": 47.62294, "lng": -122.35236 }
+  ],
+  "parking_slots": [
+    {
+      "id": "1ST-01",
+      "lat": 47.62238,
+      "lng": -122.35228,
+      "polygon": [[432, 692], [722, 664], [816, 806], [486, 854]]
+    }
+  ]
+}
+```
+
+Reference points should be stationary landmarks visible in both the image/video
+and the 2D map: building corners, intersections, curb corners, or lane edges.
 
 ## CLI flags
 
@@ -261,9 +291,12 @@ detector/
 ├── detector/
 │   ├── main.py            # CLI entry point (argparse, loop, HTTP posts)
 │   ├── config.py          # SlotConfig / CameraConfig dataclasses + JSON loader
+│   ├── server.py          # Local HTTP detector for browser image/video frames
+│   ├── street_calibration.py # Fixed street-view calibration schema
 │   ├── source.py          # VideoSource: OpenCV VideoCapture wrapper
 │   └── inference.py       # OccupancyDetector: YOLO11 + per-slot IoU + debounce
-└── slots.example.json     # Template slot config
+├── slots.example.json     # Template slot config
+└── street_calibration.example.json
 ```
 
 ## Datasets for testing without a real camera

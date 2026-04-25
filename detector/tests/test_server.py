@@ -71,3 +71,21 @@ def test_detect_boxes_can_include_people() -> None:
     response = server.detect_boxes(FakeModel(), frame, conf=0.25, include_people=True)
 
     assert [box.className for box in response.boxes] == ["car", "person"]
+
+
+def test_detect_response_exposes_make_model_extension_point() -> None:
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+
+    response = server.detect_boxes(FakeModel(), frame, conf=0.25, include_people=True)
+
+    assert response.experimental["makeModel"]["enabled"] is False
+
+
+def test_detect_geometry_lines_returns_image_size() -> None:
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+
+    response = server.detect_geometry_lines(frame)
+
+    assert response.imageWidth == 200
+    assert response.imageHeight == 100
+    assert response.lines == []

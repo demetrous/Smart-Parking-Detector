@@ -1,12 +1,15 @@
 import { ThemeProvider, useTheme } from './components/ThemeProvider';
 import ParkingMap from './components/ParkingMap';
 import SimulationView from './components/SimulationView';
-import { SunIcon, MoonIcon, SignalSlashIcon, CubeTransparentIcon, MapIcon } from '@heroicons/react/24/solid';
+import HybridStreetMapView from './components/HybridStreetMapView';
+import { SunIcon, MoonIcon, SignalSlashIcon, CubeTransparentIcon, MapIcon, RectangleGroupIcon } from '@heroicons/react/24/solid';
 import clsx from 'clsx';
 import { useState } from 'react';
 import { useSpots } from './state/SpotsProvider';
 
-function Toolbar({ view, setView }: { view: 'map' | 'simulation'; setView: (view: 'map' | 'simulation') => void }) {
+type AppView = 'hybrid' | 'map' | 'simulation';
+
+function Toolbar({ view, setView }: { view: AppView; setView: (view: AppView) => void }) {
   const { theme, toggle } = useTheme();
   const { connected } = useSpots();
   const isDark = theme === 'dark';
@@ -32,11 +35,19 @@ function Toolbar({ view, setView }: { view: 'map' | 'simulation'; setView: (view
       </button>
       <button
         className={clsx(btnClass, 'ml-1')}
-        onClick={() => setView(view === 'map' ? 'simulation' : 'map')}
-        aria-label={view === 'map' ? 'Show synthetic simulation' : 'Show map'}
-        title={view === 'map' ? 'Show synthetic simulation' : 'Show map'}
+        onClick={() => setView('hybrid')}
+        aria-label="Show hybrid street/map"
+        title="Show hybrid street/map"
       >
-        {view === 'map' ? <CubeTransparentIcon className="h-5 w-5" /> : <MapIcon className="h-5 w-5" />}
+        <RectangleGroupIcon className="h-5 w-5" />
+      </button>
+      <button
+        className={clsx(btnClass, 'ml-1')}
+        onClick={() => setView(view === 'simulation' ? 'map' : 'simulation')}
+        aria-label={view === 'simulation' ? 'Show map' : 'Show synthetic simulation'}
+        title={view === 'simulation' ? 'Show map' : 'Show synthetic simulation'}
+      >
+        {view === 'simulation' ? <MapIcon className="h-5 w-5" /> : <CubeTransparentIcon className="h-5 w-5" />}
       </button>
       {!connected && (
         <div
@@ -58,7 +69,7 @@ function Toolbar({ view, setView }: { view: 'map' | 'simulation'; setView: (view
 }
 
 function Shell() {
-  const [view, setView] = useState<'map' | 'simulation'>('map');
+  const [view, setView] = useState<AppView>('hybrid');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const legendClass = clsx(
@@ -69,9 +80,9 @@ function Shell() {
   );
   return (
     <main className="h-dvh w-full">
-      {view === 'map' ? <ParkingMap /> : <SimulationView />}
+      {view === 'hybrid' ? <HybridStreetMapView /> : view === 'map' ? <ParkingMap /> : <SimulationView />}
       <Toolbar view={view} setView={setView} />
-      <div className={clsx(legendClass, view === 'simulation' && 'hidden md:block')}>
+      <div className={clsx(legendClass, view !== 'map' && 'hidden md:block')}>
         <div className="flex items-center gap-3">
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" aria-hidden /> Available
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 ml-3" aria-hidden /> Soon

@@ -180,7 +180,11 @@ function createRoadText(text: string): THREE.Mesh {
   return mesh;
 }
 
-export default function SimulationView() {
+type SimulationViewProps = {
+  embedded?: boolean;
+};
+
+export default function SimulationView({ embedded = false }: SimulationViewProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -350,8 +354,6 @@ export default function SimulationView() {
 
   useEffect(() => {
     if (!yoloEnabled) {
-      setDetectorStatus('scripted');
-      setDetectorResult(null);
       return;
     }
 
@@ -435,7 +437,7 @@ export default function SimulationView() {
   };
 
   return (
-    <div className="relative h-dvh w-full overflow-hidden bg-slate-950">
+    <div className={clsx('relative w-full overflow-hidden bg-slate-950', embedded ? 'h-full' : 'h-dvh')}>
       <div ref={mountRef} className="h-full w-full" />
       <div className="absolute left-4 top-4 max-w-sm rounded-xl border border-white/15 bg-slate-950/75 p-4 text-sm text-white shadow-xl backdrop-blur">
         <h2 className="mb-1 font-semibold">Synthetic Street Demo</h2>
@@ -451,7 +453,16 @@ export default function SimulationView() {
                 ? 'border-lime-300 bg-lime-400/20 text-lime-100'
                 : 'border-white/20 bg-white/10 text-white hover:bg-white/15',
             )}
-            onClick={() => setYoloEnabled((enabled) => !enabled)}
+            onClick={() => {
+              setYoloEnabled((enabled) => {
+                const next = !enabled;
+                if (!next) {
+                  setDetectorStatus('scripted');
+                  setDetectorResult(null);
+                }
+                return next;
+              });
+            }}
           >
             {yoloEnabled ? 'YOLO feed on' : 'Start YOLO feed'}
           </button>
@@ -507,7 +518,7 @@ export default function SimulationView() {
           <span className="absolute -top-5 left-0 rounded bg-black/70 px-1.5 py-0.5">{box.label}</span>
         </div>
       ))}
-      <div className="absolute bottom-4 right-4 rounded-xl border border-white/15 bg-slate-950/75 px-4 py-3 text-xs text-slate-200 backdrop-blur">
+      <div className={clsx('absolute bottom-4 right-4 rounded-xl border border-white/15 bg-slate-950/75 px-4 py-3 text-xs text-slate-200 backdrop-blur', embedded && 'hidden lg:block')}>
         Source of truth stays backend/WebSocket; this view is demo-only.
       </div>
       {uploadPreviewUrl && (

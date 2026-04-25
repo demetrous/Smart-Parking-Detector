@@ -245,18 +245,24 @@ Notes:
 - The detector profile defaults to a bundled sample-video loop so the optional service can start without a real camera.
 - For a real camera, override the detector command and provide an appropriate `slots.json`.
 
-Synthetic demo note: the frontend cube button opens the optional 3D street scene
-with scripted vehicles, pedestrians, and YOLO-style boxes. It is a visual demo
-layer only; production occupancy still flows from detector -> backend -> map.
-For real YOLO boxes on the 3D canvas, start the optional detector HTTP service:
+Hybrid street/map note: the frontend now opens a Google-Maps-like hybrid view by
+default. The top pane accepts a stable street screenshot, stable video, or the
+synthetic 3D street scene; the bottom pane remains the 2D MapLibre map. A
+calibration JSON, shaped like `detector/street_calibration.example.json`, maps
+image/video parking-slot polygons to map pins.
+
+For real YOLO boxes, street geometry lines, and map-pin sync from the hybrid or
+3D views, start the optional detector HTTP service:
 
 ```powershell
 cd detector
 pip install -r requirements.txt
+$env:PARKINGSPOTTER_SHARED_SECRET="change-me"  # same value as backend, required for pin sync
 python -m detector.server --model yolo11n.pt --port 8010
 ```
 
-Then click **Start YOLO feed** in the 3D view.
+Then use the hybrid pane controls: **Upload screenshot**, **Upload video**,
+**Load calibration**, **Detect geometry**, and **Sync map pins**.
 
 ---
 

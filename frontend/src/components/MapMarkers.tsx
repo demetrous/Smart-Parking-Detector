@@ -2,6 +2,7 @@ import { Marker, Popup } from 'react-map-gl/maplibre';
 import { useSpots } from '../state/SpotsProvider';
 import { useState } from 'react';
 import { useTheme } from './ThemeProvider';
+import type { Spot } from '../types';
 
 function colorFor(status: string) {
   if (status === 'available') return '#22c55e';
@@ -37,8 +38,14 @@ function statusLabel(status: string) {
   return 'Occupied';
 }
 
-export default function MapMarkers() {
-  const { spots, recentlyHidden } = useSpots();
+type MapMarkersProps = {
+  spotsOverride?: Spot[];
+  hideRecentlyOccupied?: boolean;
+};
+
+export default function MapMarkers({ spotsOverride, hideRecentlyOccupied = true }: MapMarkersProps) {
+  const { spots: backendSpots, recentlyHidden } = useSpots();
+  const spots = spotsOverride ?? backendSpots;
   const { theme } = useTheme();
   const [selected, setSelected] = useState<{ id: string; lat: number; lng: number } | null>(null);
   const selectedSpot = selected ? spots.find((s) => s.id === selected.id) : null;
@@ -46,7 +53,7 @@ export default function MapMarkers() {
   return (
     <>
       {spots.map((s) => {
-        const isHidden = recentlyHidden.has(s.id) && s.status === 'occupied';
+        const isHidden = hideRecentlyOccupied && recentlyHidden.has(s.id) && s.status === 'occupied';
         const pinClass = `pin-anim ${isHidden ? 'pin-hidden' : 'pin-visible'}`;
         return (
           <Marker
@@ -76,7 +83,7 @@ export default function MapMarkers() {
         );
       })}
 
-      {selectedSpot && !recentlyHidden.has(selectedSpot.id) && (
+      {selectedSpot && !(hideRecentlyOccupied && recentlyHidden.has(selectedSpot.id)) && (
         <Popup
           longitude={selectedSpot.lng}
           latitude={selectedSpot.lat}

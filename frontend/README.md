@@ -72,6 +72,25 @@ python -m detector.server --model yolo11n.pt --port 8010
 Then open the 3D view and click **Start YOLO feed**. If the service is not
 running, the scene falls back to scripted boxes and shows `detector offline`.
 
+## Hybrid street/map view
+
+The default app view is a draggable hybrid layout: the top pane shows a fixed
+street screenshot, stable video, or synthetic 3D source, while the bottom pane
+keeps the 2D MapLibre map. Use **Upload screenshot** or **Upload video** in the
+top pane, then use **Load calibration** with a JSON file shaped like
+`detector/street_calibration.example.json`.
+
+When the detector service is running, the top pane can:
+
+- draw YOLO boxes for people and vehicles
+- draw calibrated parking-slot polygons
+- estimate occupied/available state from vehicle/slot overlap
+- sync those states through the detector service to the backend so map pins turn red or green
+- run experimental geometry line detection for curbs, buildings, and pavement edges
+
+For map-pin sync, run the detector service with the same
+`PARKINGSPOTTER_SHARED_SECRET` as the backend so it can sign `/spots` updates.
+
 ## Build
 
 ```bash
@@ -109,7 +128,7 @@ The frontend container serves the built static app on `http://localhost:5173`.
 |----------|---------|-------------|
 | `VITE_MAPTILER_KEY` | — | MapTiler API key (required) |
 | `VITE_API_URL` | `http://127.0.0.1:8000` | Backend base URL |
-| `VITE_DETECTOR_URL` | `http://127.0.0.1:8010` | Optional YOLO HTTP detector for 3D simulation frames |
+| `VITE_DETECTOR_URL` | `http://127.0.0.1:8010` | Optional YOLO HTTP detector for 3D simulation and hybrid street/map frames |
 
 ## Source layout
 
@@ -118,6 +137,7 @@ src/
 ├── components/
 │   ├── ParkingMap.tsx    # MapLibre map; switches style URL for light/dark
 │   ├── MapMarkers.tsx    # SVG pin markers + popup (spot name, status, Navigate)
+│   ├── HybridStreetMapView.tsx # Draggable fixed street image/video over 2D map
 │   ├── SimulationView.tsx # Optional Three.js synthetic street demo
 │   └── ThemeProvider.tsx # Light/dark context; persists to localStorage
 ├── state/
