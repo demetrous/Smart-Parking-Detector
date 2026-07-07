@@ -1,6 +1,6 @@
 # ParkingSpotter — Consensus Roadmap
 
-This file is the execution roadmap distilled from the April 2026 intermediate review. It is intentionally prescriptive so future agents can work from it without re-litigating architecture.
+This file is the execution roadmap distilled from the April 2026 intermediate review, extended by the July 2026 independent review (`docs/PROJECT-REVIEW-2026-07.md`). It is intentionally prescriptive so future agents can work from it without re-litigating architecture. Read `AGENTS.md` before working from this file.
 
 ## Global guardrails
 
@@ -11,6 +11,15 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 - Keep YOLO11 + ByteTrack as the baseline detector path. Fine-tune it on parking data before evaluating detector-family swaps.
 - Treat Gemma / VLM ideas as optional, event-triggered adjunct features only. They must not sit on the per-frame occupancy hot path.
 - Prefer additive, test-backed changes. Any schema or API change must update docs in the same task.
+
+### Additional guardrails — July 2026 review
+
+- Browser-driven detection (hybrid view → `detector.server`) is demo/authoring-only; production detection is headless `detector.main` on RTSP. Do not grow the browser path into a parallel pipeline.
+- Demo freeze: `HybridStreetMapView.tsx` and `SimulationView.tsx` receive bug fixes only until `R1.2` produces pilot accuracy metrics.
+- Single-process backend: in-memory `SpotStore` + `Hub` assume one uvicorn worker. Do not add multi-worker configs or cross-process state assumptions.
+- One geometry implementation: calibration and overlap math live in Python; the frontend consumes results via API.
+- Every new write endpoint ships with auth and size limits in the same change set (`POST /spots` HMAC is the reference pattern).
+- Model/stack change proposals must cite `detector/benchmark.py` results on labeled footage from this repo (see `docs/MODEL-ROUTING.md`, binding process rules).
 
 ## Execution order
 
@@ -27,6 +36,16 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 11. `P2.2` Detector benchmark + YOLO11 fine-tuning workflow `Completed Apr 24, 2026`
 12. `P3.3` Pilot product-layer endpoints `Completed Apr 24, 2026`
 13. `P3.4` Synthetic 3D street simulation and live visual overlay `Completed Apr 24, 2026`
+14. `R0.1` Secure the projects API — **pending**
+15. `R0.2` SQLite durability + history retention — **pending**
+16. `R0.3` "Soon" lifecycle correctness — **pending**
+17. `R1.1` Occupancy metric v2 (polygon coverage) — **pending**
+18. `R1.2` Real-camera pilot + labeled benchmark — **pending**
+19. `R1.3` Single geometry implementation — **pending**
+20. `R2.1` Fine-tune vs per-slot patch classifier head-to-head — pending, blocked on `R1.2`
+21. `R2.2` Time-bucketed dwell statistics — pending, blocked on `R1.2`
+22. `R2.3` Decompose `HybridStreetMapView.tsx` — pending
+23. `R3.x` Product layer (multi-lot, dashboard, PWA, observability) — deferred
 
 ## P0 — security and correctness
 
@@ -511,6 +530,249 @@ Make the project more visually compelling for demos and development by adding a 
 - [x] `frontend/src/components/SimulationView.tsx` renders a Three.js synthetic street scene with scripted moving car, parked car, pedestrian crossing, and YOLO-style overlay boxes.
 - [x] `frontend/src/App.tsx` adds a toolbar toggle between the canonical map and synthetic demo while leaving map behavior intact.
 - [x] `frontend/README.md` and root `README.md` document that the 3D view is demo-only and backend/WebSocket spot state remains the source of truth.
+
+## July 2026 roadmap — R0–R3 readiness push
+
+Derived from `docs/PROJECT-REVIEW-2026-07.md`. Readiness target: **one real
+camera, running continuously for 2+ weeks, with measured spot-state accuracy
+against labeled ground truth, and an ops runbook.** Execute `R0` before `R1`,
+`R1` before `R2`. Recommended agent tier per item is in
+`docs/MODEL-ROUTING.md`.
+
+## R0 — ship in-flight work safely
+
+### `R0.1` Secure the projects API
+
+**Goal**
+
+Close the unauthenticated, uncapped write surface (project create/patch, asset upload, ZIP import) before the projects branch reaches any shared environment.
+
+**Likely files**
+
+- `backend/app/main.py`
+- `backend/app/project_store.py`
+- `backend/tests/test_projects_api.py`
+- `frontend/src/lib/api.ts`
+- `frontend/src/components/HybridStreetMapView.tsx`
+- `README.md`, `backend/README.md`
+
+**Required implementation**
+
+- Add an operator token: when `PARKINGSPOTTER_PROJECTS_TOKEN` is set, all project **write** endpoints (`POST /projects`, `PATCH /projects/{id}`, `POST /projects/{id}/assets`, `POST /projects/import`) require `Authorization: Bearer <token>`; reject otherwise with `401`. When unset, writes stay open for local dev but log a startup warning.
+- Frontend sends the token from `VITE_PROJECTS_TOKEN` when configured.
+- Enforce upload size caps during streaming write (reject with `413`): `PARKINGSPOTTER_MAX_UPLOAD_MB` (default 512) for asset uploads.
+- Enforce ZIP import limits: max entry count (default 2000), max total **uncompressed** size (default 1024 MB), reject nested unsafe paths (already handled — keep tests).
+- Keep the existing extension allowlist and path-traversal guards; do not weaken.
+
+**Acceptance criteria**
+
+- With a token configured, unauthenticated writes are rejected; reads remain open.
+- Oversized upload and oversized/over-dense ZIP are rejected with `413` and leave no partial project directory behind.
+- Local dev without a token still works, with a logged warning.
+- Tests cover: authorized write, unauthorized write, oversized upload, ZIP entry-count and uncompressed-size limits.
+
+**Progress**
+
+- [ ] Bearer-token gate on project write endpoints
+- [ ] Streaming upload size cap
+- [ ] ZIP import limits (entries, uncompressed size)
+- [ ] Frontend token wiring
+- [ ] Tests + docs
+
+### `R0.2` SQLite durability and history retention
+
+**Goal**
+
+Prevent `database is locked` incidents under pilot load and stop unbounded `spot_history` growth.
+
+**Likely files**
+
+- `backend/app/db.py`
+- `backend/app/main.py` (retention loop wiring)
+- new backend tests
+
+**Required implementation**
+
+- Introduce a single connection helper in `db.py` that every operation uses; it applies `PRAGMA journal_mode=WAL` (once per database) and `PRAGMA busy_timeout=5000` (per connection).
+- Add age-based history retention: delete `spot_history` rows older than `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` (default 90), via a periodic background task (daily) plus one pass at startup.
+- Retention must never delete rows belonging to a spot's **current open session** (an `occupied`/`soon` run without a closing `available`), regardless of age.
+
+**Acceptance criteria**
+
+- All db operations go through the shared helper; WAL and busy_timeout verified in a test.
+- Pruning removes old completed-session rows, preserves open sessions, and dwell stats within the retention window are unchanged.
+- Retention default and env var documented.
+
+**Progress**
+
+- [ ] Shared connection helper with WAL + busy_timeout
+- [ ] Retention task + startup pass
+- [ ] Open-session preservation rule
+- [ ] Tests + docs
+
+### `R0.3` "Soon" lifecycle correctness
+
+**Goal**
+
+Make the yellow signal trustworthy: dwell promotions must demote when the prediction misses, and the dwell checker must not race the multi-camera merge for canonical state.
+
+**Likely files**
+
+- `backend/app/main.py` (`dwell_checker_loop`)
+- `backend/app/store.py`
+- new backend tests
+
+**Required implementation**
+
+- Track dwell promotions explicitly in `SpotStore` (e.g., `spot_id -> promoted_at`) instead of writing bare canonical status, so promotion state survives merges.
+- Composition rule (deterministic): merge computes the base canonical from observations as today; if base status is `occupied` and an active dwell promotion exists, the published status is `soon`. Detector-reported `soon` (motion) always passes through unchanged.
+- Demotion: clear the promotion and republish `occupied` when elapsed ≥ `SOON_DEMOTE_FACTOR` (default 1.3) × mean dwell, or when the observation transitions to `available` (promotion cleared silently — normal flow).
+- Broadcast on every published-status change, as today.
+
+**Acceptance criteria**
+
+- Sequence `occupied -> [dwell promotion] soon -> car stays past demote factor -> occupied` is covered by a test.
+- A new observation for the same spot no longer silently reverts an active dwell promotion.
+- Detector motion-`soon` is unaffected by promotion bookkeeping.
+- `SOON_DEMOTE_FACTOR` documented alongside `SOON_THRESHOLD`.
+
+**Progress**
+
+- [ ] Promotion tracking in `SpotStore`
+- [ ] Merge/promotion composition rule
+- [ ] Demotion rule + env var
+- [ ] Tests + docs
+
+## R1 — contact with reality
+
+### `R1.1` Occupancy metric v2 — polygon coverage
+
+**Goal**
+
+Replace axis-aligned slot-bbox IoU with slot-polygon coverage so angled/perspective street parking stops producing adjacent-slot false positives. This is the highest-leverage accuracy fix in the repo and must land **before** fine-tuning work.
+
+**Likely files**
+
+- `detector/detector/inference.py`
+- `detector/detector/main.py` (CLI flag)
+- `detector/benchmark.py` (same metric for benchmarking)
+- `detector/tests/test_inference.py`
+- `detector/README.md`, root `README.md`
+
+**Required implementation**
+
+- Occupancy signal per slot: coverage ratio = `area(vehicle_bbox ∩ slot_polygon) / area(slot_polygon)` (OpenCV `intersectConvexConvex` or equivalent polygon clipping; no new heavy dependency).
+- Secondary confirmation signal: vehicle bbox bottom-center point-in-polygon (wire up the currently dead `_point_in_polygon`, or delete it if the coverage ratio alone wins in tests).
+- New CLI flag `--occupancy-threshold` (default to be tuned, start 0.5); keep `--iou` as a deprecated alias with a warning for one release.
+- Publish real detection confidence in plain mode instead of hardcoded `1.0`.
+- Apply the identical metric in `benchmark.py` so before/after comparisons are valid.
+
+**Acceptance criteria**
+
+- Synthetic-geometry unit tests: angled slot with adjacent-lane vehicle no longer reports occupied (regression test for the bbox false positive); large vehicle fully covering a small slot reports occupied (regression for the low-IoU miss).
+- ByteTrack/tracking mode uses the same occupancy signal.
+- Benchmark run on an existing labeled clip documents before/after precision/recall in a short report committed under `docs/`.
+- Deprecated `--iou` alias warns but works.
+
+**Progress**
+
+- [ ] Coverage-ratio implementation (plain + tracked paths)
+- [ ] Point-in-polygon secondary signal wired or removed
+- [ ] CLI flag + deprecation
+- [ ] Real confidence in plain mode
+- [ ] Benchmark parity + before/after report
+- [ ] Tests + docs
+
+### `R1.2` Real-camera pilot with labeled ground truth
+
+**Goal**
+
+Produce the project's first honest accuracy number: a fixed camera observed continuously, with labeled footage benchmarked through the real detector path.
+
+**Required implementation**
+
+- Choose the pilot scene (the `Description/1st Ave` assets suggest the intended street) and mount a fixed camera or RTSP-publishing phone rig per the README testing guidance.
+- Record representative clips (varying light/traffic); label occupied/available ground truth per slot in the existing benchmark JSONL format.
+- Author slots + homography calibration for the scene (`draw_slots.py --calibration`).
+- Run `detector/benchmark.py` with the `R1.1` metric; record baseline results.
+- Run the full stack (headless detector → backend → frontend) continuously for 2+ weeks; keep an ops log (crashes, disk, camera drops) and let dwell history accumulate.
+- Write `docs/PILOT-REPORT.md`: setup, accuracy numbers, dwell-signal observations, incidents, and go/no-go conclusions for `R2` experiments.
+
+**Acceptance criteria**
+
+- Labeled dataset + calibration + slots config committed (or stored per privacy policy with paths documented).
+- Benchmark report with per-slot accuracy, precision/recall for occupied.
+- 2+ weeks continuous operation demonstrated, incidents logged.
+- The yellow "soon" signal evaluated against reality at least anecdotally (did promoted spots actually free up?).
+
+**Progress**
+
+- [ ] Scene + camera rig
+- [ ] Labeled clips + calibration
+- [ ] Baseline benchmark report
+- [ ] 2-week continuous run + ops log
+- [ ] `docs/PILOT-REPORT.md`
+
+### `R1.3` Single geometry implementation
+
+**Goal**
+
+Remove the divergent TypeScript re-implementations of geometry math (inverse-distance-weighted pixel→lat/lng, duplicated IoU) so calibration behavior is identical everywhere.
+
+**Likely files**
+
+- `detector/detector/server.py` (new endpoint)
+- `detector/detector/street_calibration.py` / `detector/calibration.py`
+- `frontend/src/components/HybridStreetMapView.tsx`
+- `frontend/src/lib/api.ts`
+- detector tests
+
+**Required implementation**
+
+- Add a detector-server endpoint (e.g., `POST /calibration/project`) that takes a street calibration JSON plus pixel points and returns lat/lng via the existing Python homography.
+- Frontend calls this endpoint for pin sync; delete `mapPointFromPixel` (IDW) and the TS IoU copy, or reduce TS to display-only math (overlay scaling stays client-side).
+- Graceful degradation: when the detector server is offline, pin sync is disabled with a clear UI state (no silent fallback to approximate math).
+
+**Acceptance criteria**
+
+- No coordinate-transform math remains in TypeScript.
+- Pin positions from the hybrid view match `draw_slots.py --calibration` output for the same inputs (round-trip test on the server endpoint).
+- Offline detector server produces an explicit UI state, not wrong pins.
+
+**Progress**
+
+- [ ] Server projection endpoint + tests
+- [ ] Frontend consumes endpoint; TS IDW/IoU removed
+- [ ] Offline handling
+- [ ] Docs
+
+## R2 — measured improvement (blocked on `R1.2` data unless noted)
+
+### `R2.1` Fine-tuned YOLO11 vs per-slot patch classifier — head-to-head
+
+- Fine-tune YOLO11n on PKLot + pilot frames (workflow exists: `detector/fine_tune_yolo11.py`).
+- Implement a minimal per-slot patch classifier (CNRPark/mAlexNet style: crop slot polygon, classify occupied/empty) as a benchmark-only alternative.
+- Compare on the `R1.2` labeled set: accuracy, latency, CPU load. Decision by numbers; the winner becomes the occupancy engine, the loser is documented and dropped.
+- Note: YOLO remains required for the motion/"soon" path regardless of the occupancy winner.
+
+### `R2.2` Time-bucketed dwell statistics
+
+- Replace the global per-spot mean with time-of-day (and optionally weekday/weekend) bucketed medians/quantiles once pilot history exists.
+- Keep the interface of `query_dwell_db` stable for callers; safe fallback to global stats when a bucket is sparse.
+- No ML models here; escalate to survival models only if bucketed quantiles measurably underperform.
+
+### `R2.3` Decompose `HybridStreetMapView.tsx`
+
+- 807 lines and growing; split into focused modules (project management, media pane, detection overlay, calibration/pin sync, split-pane state) with a frontier-written decomposition plan executed by a mid-tier agent (`docs/MODEL-ROUTING.md`).
+- Pure refactor: no behavior change; lint/build gate must stay green.
+
+## R3 — product layer (deferred until R1 metrics exist)
+
+- Multi-lot / zone data model (today: one implicit lot with hardcoded demo seeds).
+- Operator dashboard (utilization, camera health, dwell readiness — API endpoints already exist).
+- PWA polish for the driver-facing map.
+- Observability: `/metrics`, structured logging, alerting.
+- Repo hygiene: move review assets (`Project Review/`, `Gemma 4 capabilities`, PSDs) into `docs/` or an archive branch; drop committed YOLO weights (auto-downloaded).
 
 ## Done means done
 

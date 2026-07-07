@@ -91,6 +91,18 @@ When the detector service is running, the top pane can:
 For map-pin sync, run the detector service with the same
 `PARKINGSPOTTER_SHARED_SECRET` as the backend so it can sign `/spots` updates.
 
+### Portable projects
+
+Use **New project** in the hybrid panel before uploading screenshots, videos, or
+calibration files. Uploaded assets are copied to the backend project folder, so
+they survive page reloads and Vite/server restarts. Use **Save** after running
+detections or geometry so the last overlays and split-pane size reopen with the
+project.
+
+Use **Export** to download a ZIP, or copy the project folder directly from
+`backend/projects/<project-id>/`. On another computer, either use **Import** with
+the ZIP or copy the folder into that machine's `backend/projects/` directory.
+
 ## Build
 
 ```bash

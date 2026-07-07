@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 from collections.abc import Coroutine
 from typing import Any, AsyncGenerator
 
-from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from .auth import HEADER_SIGNATURE, HEADER_TIMESTAMP, verify_signed_detector_request
 from .db import (
@@ -23,6 +23,17 @@ from .db import (
 )
 from .hub import Hub
 from .models import Event, Spot, SpotStatus
+from .project_models import ProjectCreate, ProjectListResponse, ProjectManifest, ProjectPatch
+from .project_store import (
+    asset_path,
+    create_project,
+    export_project_zip,
+    import_project_zip,
+    list_projects,
+    patch_project,
+    read_manifest,
+    save_project_asset,
+)
 from .store import SpotStore
 
 store = SpotStore()
@@ -295,6 +306,54 @@ def create_app() -> FastAPI:
                 )
             )
         return Response("\n".join(rows) + "\n", media_type="text/csv")
+
+    @app.get("/projects", response_model=ProjectListResponse)
+    async def get_projects() -> ProjectListResponse:
+        """List portable street/map projects saved on this backend."""
+        return ProjectListResponse(projects=list_projects())
+
+    @app.post("/projects", response_model=ProjectManifest)
+    async def create_portable_project(payload: ProjectCreate) -> ProjectManifest:
+        return create_project(payload)
+
+    @app.get("/projects/{project_id}", response_model=ProjectManifest)
+    async def get_portable_project(project_id: str) -> ProjectManifest:
+        return read_manifest(project_id)
+
+    @app.patch("/projects/{project_id}", response_model=ProjectManifest)
+    async def update_portable_project(project_id: str, payload: ProjectPatch) -> ProjectManifest:
+        return patch_project(project_id, payload)
+
+    @app.post("/projects/{project_id}/assets")
+    async def upload_project_asset(
+        project_id: str,
+        file: UploadFile = File(...),
+        kind: str = Query("asset", pattern="^(media|calibration|detections|geometry|asset)$"),
+    ) -> dict:
+        return (await save_project_asset(project_id, file, kind)).model_dump(mode="json")
+
+    @app.get("/projects/{project_id}/assets/{asset_relative_path:path}")
+    async def get_project_asset(project_id: str, asset_relative_path: str) -> FileResponse:
+        return FileResponse(asset_path(project_id, asset_relative_path))
+
+    @app.get("/projects/{project_id}/export")
+    async def export_portable_project(project_id: str) -> Response:
+        manifest = read_manifest(project_id)
+        payload = export_project_zip(project_id)
+        safe_name = manifest.id.replace("/", "-")
+        return Response(
+            payload,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+        )
+
+    @app.post("/projects/import")
+    async def import_portable_project(file: UploadFile = File(...)) -> dict:
+        try:
+            result = await import_project_zip(file)
+        except HTTPException:
+            raise
+        return result.model_dump(mode="json")
 
     @app.post("/spots")
     async def upsert_spot(request: Request) -> dict:

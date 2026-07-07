@@ -3,6 +3,17 @@ import clsx from 'clsx';
 import ParkingMap from './ParkingMap';
 import SimulationView from './SimulationView';
 import type { Spot } from '../types';
+import {
+  createProject,
+  fetchProject,
+  fetchProjects,
+  importProject,
+  patchProject,
+  projectAssetUrl,
+  projectExportUrl,
+  uploadProjectAsset,
+  type ProjectManifest,
+} from '../lib/api';
 
 type MediaMode = 'image' | 'video' | 'synthetic';
 type DetectStatus = 'idle' | 'detecting' | 'ready' | 'offline' | 'syncing' | 'synced' | 'error';
@@ -96,6 +107,7 @@ type Size = {
 
 const VEHICLE_CLASS_IDS = new Set([2, 3, 5, 7]);
 const DETECTOR_URL = ((import.meta.env.VITE_DETECTOR_URL as string | undefined) ?? 'http://127.0.0.1:8010').replace(/\/$/, '');
+const LAST_PROJECT_KEY = 'parkingSpotter:lastProjectId';
 
 function toOverlay(box: DetectBox, imageWidth: number, imageHeight: number, layout: MediaLayout) {
   return {
@@ -254,6 +266,10 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
 }
 
+function jsonBlob(data: unknown): Blob {
+  return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+}
+
 export default function HybridStreetMapView() {
   const [topPercent, setTopPercent] = useState(67);
   const [mediaMode, setMediaMode] = useState<MediaMode>('image');
@@ -263,6 +279,9 @@ export default function HybridStreetMapView() {
   const [calibration, setCalibration] = useState<StreetCalibration | null>(null);
   const [status, setStatus] = useState<DetectStatus>('idle');
   const [autoVideo, setAutoVideo] = useState(false);
+  const [projects, setProjects] = useState<ProjectManifest[]>([]);
+  const [activeProject, setActiveProject] = useState<ProjectManifest | null>(null);
+  const [projectStatus, setProjectStatus] = useState('Unsaved');
   const [mediaLayout, setMediaLayout] = useState<MediaLayout>({ left: 0, top: 0, width: 0, height: 0 });
   const [mediaNaturalSize, setMediaNaturalSize] = useState<Size | null>(null);
   const splitRef = useRef<HTMLDivElement | null>(null);
@@ -270,6 +289,7 @@ export default function HybridStreetMapView() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const calibrationInputRef = useRef<HTMLInputElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const occupancy = useMemo(() => estimateOccupancy(detectResult, calibration), [calibration, detectResult]);
@@ -278,12 +298,12 @@ export default function HybridStreetMapView() {
 
   useEffect(() => {
     return () => {
-      if (mediaUrl) URL.revokeObjectURL(mediaUrl);
+      if (mediaUrl?.startsWith('blob:')) URL.revokeObjectURL(mediaUrl);
     };
   }, [mediaUrl]);
 
   const replaceMedia = (file: File, mode: MediaMode) => {
-    if (mediaUrl) URL.revokeObjectURL(mediaUrl);
+    if (mediaUrl?.startsWith('blob:')) URL.revokeObjectURL(mediaUrl);
     setMediaMode(mode);
     setMediaUrl(URL.createObjectURL(file));
     setDetectResult(null);
@@ -302,8 +322,133 @@ export default function HybridStreetMapView() {
     setMediaLayout(containedLayout({ width: stageRect.width, height: stageRect.height }, naturalSize));
   }, [mediaNaturalSize]);
 
+  const refreshProjects = async () => {
+    const nextProjects = await fetchProjects();
+    setProjects(nextProjects);
+    return nextProjects;
+  };
+
+  const openProject = async (projectId: string) => {
+    if (!projectId) return;
+    setProjectStatus('Opening project...');
+    try {
+      const project = await fetchProject(projectId);
+      setActiveProject(project);
+      localStorage.setItem(LAST_PROJECT_KEY, project.id);
+      setTopPercent(project.uiState.topPanePercent);
+      setMediaMode(project.uiState.selectedMode);
+      setMediaNaturalSize(null);
+      setDetectResult(null);
+      setGeometryResult(null);
+      if (mediaUrl?.startsWith('blob:')) URL.revokeObjectURL(mediaUrl);
+      setMediaUrl(project.media?.assetPath ? projectAssetUrl(project.id, project.media.assetPath) : null);
+      if (project.calibrationPath) {
+        const calibrationResponse = await fetch(projectAssetUrl(project.id, project.calibrationPath));
+        setCalibration((await calibrationResponse.json()) as StreetCalibration);
+      } else {
+        setCalibration(null);
+      }
+      if (project.lastDetectionsPath) {
+        const detectionsResponse = await fetch(projectAssetUrl(project.id, project.lastDetectionsPath));
+        setDetectResult((await detectionsResponse.json()) as DetectResponse);
+      }
+      if (project.geometryLinesPath) {
+        const geometryResponse = await fetch(projectAssetUrl(project.id, project.geometryLinesPath));
+        setGeometryResult((await geometryResponse.json()) as GeometryResponse);
+      }
+      setProjectStatus(`Opened ${project.name}`);
+    } catch {
+      setProjectStatus('Could not open project');
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nextProjects = await refreshProjects();
+        if (cancelled) return;
+        const lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
+        const projectToOpen = nextProjects.find((project) => project.id === lastProjectId) ?? nextProjects[0];
+        if (projectToOpen) await openProject(projectToOpen.id);
+      } catch {
+        if (!cancelled) setProjectStatus('Projects unavailable');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  // Run only once on mount. openProject reads current media URL but initial state is null.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const createNewProject = async () => {
+    const name = window.prompt('Project name', 'First Ave Test');
+    if (!name?.trim()) return;
+    setProjectStatus('Creating project...');
+    try {
+      const project = await createProject(name.trim());
+      setActiveProject(project);
+      localStorage.setItem(LAST_PROJECT_KEY, project.id);
+      await refreshProjects();
+      setProjectStatus(`Created ${project.name}`);
+    } catch {
+      setProjectStatus('Could not create project');
+    }
+  };
+
+  const saveProjectState = async () => {
+    if (!activeProject) {
+      setProjectStatus('Create or open a project first');
+      return;
+    }
+    setProjectStatus('Saving project...');
+    try {
+      if (detectResult) {
+        await uploadProjectAsset(activeProject.id, 'detections', jsonBlob(detectResult), 'last-detections.json');
+      }
+      if (geometryResult) {
+        await uploadProjectAsset(activeProject.id, 'geometry', jsonBlob(geometryResult), 'geometry-lines.json');
+      }
+      const updated = await patchProject(activeProject.id, {
+        uiState: {
+          topPanePercent: topPercent,
+          selectedMode: mediaMode,
+        },
+      });
+      setActiveProject(updated);
+      await refreshProjects();
+      setProjectStatus('Project saved');
+    } catch {
+      setProjectStatus('Could not save project');
+    }
+  };
+
+  const saveUploadedAsset = async (
+    file: Blob,
+    filename: string,
+    kind: 'media' | 'calibration',
+  ) => {
+    if (!activeProject) return null;
+    try {
+      const asset = await uploadProjectAsset(activeProject.id, kind, file, filename);
+      const updated = await fetchProject(activeProject.id);
+      setActiveProject(updated);
+      await refreshProjects();
+      setProjectStatus(`Saved ${filename}`);
+      return asset;
+    } catch {
+      setProjectStatus(`Could not save ${filename}`);
+      return null;
+    }
+  };
+
   const detectImageFile = async (file: File) => {
     replaceMedia(file, 'image');
+    const asset = await saveUploadedAsset(file, file.name, 'media');
+    if (asset && activeProject) {
+      setMediaUrl(projectAssetUrl(activeProject.id, asset.path));
+    }
     setStatus('detecting');
     try {
       setDetectResult(await detectBlob(file));
@@ -510,6 +655,53 @@ export default function HybridStreetMapView() {
         )}
 
         <div className="absolute left-2 right-2 top-16 z-40 max-w-xl rounded-xl border border-white/15 bg-slate-950/80 p-3 text-xs text-white shadow-xl backdrop-blur sm:left-4 sm:right-auto md:left-40 md:top-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2 border-b border-white/10 pb-2">
+            <select
+              className="max-w-44 rounded-lg border border-white/20 bg-slate-950 px-2 py-1.5 font-semibold text-white"
+              value={activeProject?.id ?? ''}
+              onChange={(event) => void openProject(event.target.value)}
+              title="Open saved project"
+            >
+              <option value="">Unsaved session</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold hover:bg-white/15" onClick={() => void createNewProject()}>
+              New project
+            </button>
+            <button type="button" className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold hover:bg-white/15 disabled:opacity-50" disabled={!activeProject} onClick={() => void saveProjectState()}>
+              Save
+            </button>
+            {activeProject && (
+              <a className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold hover:bg-white/15" href={projectExportUrl(activeProject.id)}>
+                Export
+              </a>
+            )}
+            <input ref={importInputRef} type="file" accept=".zip,application/zip" className="hidden" onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setProjectStatus('Importing project...');
+                try {
+                  const result = await importProject(file);
+                  await refreshProjects();
+                  await openProject(result.project.id);
+                  setProjectStatus(`Imported ${result.project.name}`);
+                } catch {
+                  setProjectStatus('Could not import project');
+                }
+              }
+              e.currentTarget.value = '';
+            }} />
+            <button type="button" className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold hover:bg-white/15" onClick={() => importInputRef.current?.click()}>
+              Import
+            </button>
+          </div>
+          <div className="mb-2 text-slate-300">
+            Project: <span className="font-semibold text-white">{activeProject?.name ?? 'Unsaved session'}</span> · {projectStatus}
+          </div>
           <div className="mb-2 flex flex-wrap gap-2">
             {(['image', 'video', 'synthetic'] as MediaMode[]).map((mode) => (
               <button
@@ -532,14 +724,24 @@ export default function HybridStreetMapView() {
               if (file) void detectImageFile(file);
               e.currentTarget.value = '';
             }} />
-            <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => {
+            <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={async (e) => {
               const file = e.target.files?.[0];
-              if (file) replaceMedia(file, 'video');
+              if (file) {
+                replaceMedia(file, 'video');
+                const asset = await saveUploadedAsset(file, file.name, 'media');
+                if (asset && activeProject) {
+                  setMediaUrl(projectAssetUrl(activeProject.id, asset.path));
+                }
+              }
               e.currentTarget.value = '';
             }} />
             <input ref={calibrationInputRef} type="file" accept="application/json,.json" className="hidden" onChange={async (e) => {
               const file = e.target.files?.[0];
-              if (file) setCalibration(JSON.parse(await file.text()) as StreetCalibration);
+              if (file) {
+                const text = await file.text();
+                setCalibration(JSON.parse(text) as StreetCalibration);
+                await saveUploadedAsset(new Blob([text], { type: 'application/json' }), file.name, 'calibration');
+              }
               e.currentTarget.value = '';
             }} />
             <button type="button" className="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 font-semibold hover:bg-white/15" onClick={() => imageInputRef.current?.click()}>

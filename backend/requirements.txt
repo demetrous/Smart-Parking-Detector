@@ -3,5 +3,6 @@ uvicorn[standard]>=0.46.0
 pydantic>=2.13.3
 aiosqlite>=0.22.1
 httpx>=0.28.1
+python-multipart>=0.0.20
 pytest>=9.0.3
 pytest-anyio>=0.0.0

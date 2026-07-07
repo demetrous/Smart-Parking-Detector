@@ -264,6 +264,24 @@ python -m detector.server --model yolo11n.pt --port 8010
 Then use the hybrid pane controls: **Upload screenshot**, **Upload video**,
 **Load calibration**, **Detect geometry**, and **Sync map pins**.
 
+Portable projects: the hybrid view can save screenshots, videos, calibration
+JSON, last detections, geometry lines, and split-pane state into backend-managed
+project folders. Use **New project** before uploading assets, then **Save** after
+detections/calibration changes. Projects live under `backend/projects/` by
+default and can be transferred by copying the project folder or by using
+**Export** / **Import** in the UI.
+
+Each portable project is plain files:
+
+```text
+backend/projects/<project-id>/
+├── project.json
+├── assets/
+└── derived/
+```
+
+Set `PARKINGSPOTTER_PROJECTS_DIR` to store projects somewhere else.
+
 ---
 
 ## Automated tests
@@ -494,6 +512,7 @@ Smart-Parking-Detector/
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated list of allowed browser origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | *(required for detector ingest)* | Shared secret used to verify signed detector `POST /spots` requests |
 | `PARKINGSPOTTER_MAX_SIGNATURE_AGE_SECONDS` | `30` | Maximum allowed clock skew / replay window for detector request signatures |
+| `PARKINGSPOTTER_PROJECTS_DIR` | `backend/projects` | Folder used for portable hybrid street/map projects and uploaded assets |
 | `SOON_THRESHOLD` | `0.7` | Fraction of mean dwell time after which a spot turns yellow (0.7 = 70 %) |
 | `DWELL_MIN_COUNT` | `3` | Minimum number of historical dwell samples needed before predictions activate |
 | `DWELL_CHECK_INTERVAL` | `15.0` | How often (seconds) the dwell-checker runs |
@@ -532,6 +551,11 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 | `GET` | `/analytics/summary` | Returns current utilization, status counts, dwell readiness, and per-spot dwell stats for pilot dashboards |
 | `GET` | `/cameras` | Returns per-camera health, last-observed time, stale/online state, and observed spot counts |
 | `GET` | `/spots.csv` | Exports the current canonical spot state as CSV for spreadsheet or dashboard integrations |
+| `GET` | `/projects` | Lists saved portable street/map projects |
+| `POST` | `/projects` | Creates a portable project folder and `project.json` manifest |
+| `POST` | `/projects/{id}/assets` | Uploads project media, calibration, detections, or geometry assets |
+| `GET` | `/projects/{id}/export` | Downloads a project ZIP for transfer to another computer |
+| `POST` | `/projects/import` | Imports a project ZIP |
 | `WS` | `/ws` | WebSocket connection — the frontend subscribes here for live updates |
 
 ---
@@ -552,6 +576,15 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 For local development, export the same secret in both shells before starting the backend and detector.
 
 ---
+
+## For contributors and AI agents
+
+Development in this repo is agent-driven and process-governed:
+
+- **[`AGENTS.md`](AGENTS.md)** — the authoritative agent guide: architecture guardrails, development process, verification gate, security invariants. Read it before changing anything.
+- **[`todo.md`](todo.md)** — the prescriptive execution roadmap. Current phase: the July 2026 `R0`–`R3` readiness push.
+- **[`docs/MODEL-ROUTING.md`](docs/MODEL-ROUTING.md)** — which model tier handles which task (development agents and the runtime CV pipeline).
+- **[`docs/PROJECT-REVIEW-2026-07.md`](docs/PROJECT-REVIEW-2026-07.md)** — the latest independent review and the evidence behind the roadmap.
 
 ## Review-driven priorities
 
