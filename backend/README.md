@@ -58,7 +58,7 @@ Current backend coverage includes:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DB_PATH` | `parking.db` | SQLite database file path (WAL mode; needs a local filesystem) |
-| `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` | `90` | Delete `spot_history` sessions that ended more than this many days ago, once at startup and then daily. A spot's open session and any session that crosses the cutoff are kept whole. `0` keeps history forever; invalid values log a warning and use `90` |
+| `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` | `90` | Delete `spot_history` sessions that ended more than this many days ago, once at startup and then daily. A spot's open session and any session that crosses the cutoff are kept whole. `0` keeps history forever; invalid values log a warning and use `90`, values above `36500` (100 years) are capped at `36500` |
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | — | Required in production for signed `POST /spots` (must match detector) |
 | `MERGE_CONFIG_PATH` | — | Optional JSON merge rules for multi-camera (`backend/merge.example.json`) |

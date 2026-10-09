@@ -233,6 +233,8 @@ async def test_prune_with_retention_disabled_deletes_nothing(db_path: Path, days
         ("-5", 90, True),
         ("ninety", 90, True),
         ("1.5", 90, True),
+        ("36500", 36500, False),
+        ("9999999", 36500, True),
     ],
 )
 def test_history_retention_days_env(
