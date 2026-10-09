@@ -282,6 +282,18 @@ backend/projects/<project-id>/
 
 Set `PARKINGSPOTTER_PROJECTS_DIR` to store projects somewhere else.
 
+Project writes (create, save, upload, import) are protected by an operator
+token once you set `PARKINGSPOTTER_PROJECTS_TOKEN` on the backend; requests
+then need `Authorization: Bearer <token>`, and reads stay open. Without it,
+writes are open for local development and the backend logs a warning at
+startup. Uploads and imported ZIPs are size-capped (see the configuration
+reference); over-limit requests get `413` and leave no partial files.
+
+For local authoring, put the same value in `VITE_PROJECTS_TOKEN` in
+`frontend/.env`. Vite builds that value into the JS bundle, so anyone who loads
+the page can read it: **never set `VITE_PROJECTS_TOKEN` for a publicly served
+frontend.**
+
 ---
 
 ## Automated tests
@@ -502,6 +514,7 @@ Smart-Parking-Detector/
 |----------|---------|-------------|
 | `VITE_MAPTILER_KEY` | *(required)* | Free API key from [maptiler.com](https://maptiler.com) — used to load the map tiles |
 | `VITE_API_URL` | `http://127.0.0.1:8000` | Where the backend is running |
+| `VITE_PROJECTS_TOKEN` | — | Bearer token sent on project writes; must match `PARKINGSPOTTER_PROJECTS_TOKEN`. **Local authoring only**: it is readable in the built bundle |
 
 ### Backend — environment variables
 
@@ -513,6 +526,10 @@ Smart-Parking-Detector/
 | `PARKINGSPOTTER_SHARED_SECRET` | *(required for detector ingest)* | Shared secret used to verify signed detector `POST /spots` requests |
 | `PARKINGSPOTTER_MAX_SIGNATURE_AGE_SECONDS` | `30` | Maximum allowed clock skew / replay window for detector request signatures |
 | `PARKINGSPOTTER_PROJECTS_DIR` | `backend/projects` | Folder used for portable hybrid street/map projects and uploaded assets |
+| `PARKINGSPOTTER_PROJECTS_TOKEN` | — | When set, project write endpoints require `Authorization: Bearer <token>` (`401` otherwise). When unset, writes are open and a startup warning is logged |
+| `PARKINGSPOTTER_MAX_UPLOAD_MB` | `512` | Max size of one project asset upload and of one import ZIP file (`413` above it) |
+| `PARKINGSPOTTER_MAX_ZIP_ENTRIES` | `2000` | Max number of entries in an imported project ZIP |
+| `PARKINGSPOTTER_MAX_ZIP_UNCOMPRESSED_MB` | `1024` | Max total uncompressed size of an imported project ZIP |
 | `SOON_THRESHOLD` | `0.7` | Fraction of mean dwell time after which a spot turns yellow (0.7 = 70 %) |
 | `DWELL_MIN_COUNT` | `3` | Minimum number of historical dwell samples needed before predictions activate |
 | `DWELL_CHECK_INTERVAL` | `15.0` | How often (seconds) the dwell-checker runs |
@@ -552,10 +569,13 @@ The backend exposes these HTTP endpoints (also browsable at `http://127.0.0.1:80
 | `GET` | `/cameras` | Returns per-camera health, last-observed time, stale/online state, and observed spot counts |
 | `GET` | `/spots.csv` | Exports the current canonical spot state as CSV for spreadsheet or dashboard integrations |
 | `GET` | `/projects` | Lists saved portable street/map projects |
-| `POST` | `/projects` | Creates a portable project folder and `project.json` manifest |
-| `POST` | `/projects/{id}/assets` | Uploads project media, calibration, detections, or geometry assets |
+| `POST` | `/projects` | Creates a portable project folder and `project.json` manifest (token-protected) |
+| `GET` | `/projects/{id}` | Returns one project manifest |
+| `PATCH` | `/projects/{id}` | Updates a project manifest (token-protected) |
+| `POST` | `/projects/{id}/assets` | Uploads project media, calibration, detections, or geometry assets (token-protected, size-capped) |
+| `GET` | `/projects/{id}/assets/{path}` | Downloads one project asset |
 | `GET` | `/projects/{id}/export` | Downloads a project ZIP for transfer to another computer |
-| `POST` | `/projects/import` | Imports a project ZIP |
+| `POST` | `/projects/import` | Imports a project ZIP (token-protected, size- and entry-capped) |
 | `WS` | `/ws` | WebSocket connection — the frontend subscribes here for live updates |
 
 ---

@@ -21,11 +21,11 @@ reaches any shared environment, and stop OpenCV 5 from slipping in silently.
 Spec: [`2026-10-09-secure-projects-api/`](2026-10-09-secure-projects-api/requirements.md)
 
 - [x] Pin `opencv-python<5` (done in PR #1)
-- [ ] Bearer-token gate on project write endpoints
-- [ ] Streaming upload size cap
-- [ ] ZIP import limits (entries, uncompressed size)
-- [ ] Frontend token wiring
-- [ ] Tests + docs
+- [x] Bearer-token gate on project write endpoints
+- [x] Streaming upload size cap
+- [x] ZIP import limits (entries, uncompressed size)
+- [x] Frontend token wiring
+- [x] Tests + docs
 
 ---
 

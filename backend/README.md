@@ -60,6 +60,10 @@ Current backend coverage includes:
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | — | Required in production for signed `POST /spots` (must match detector) |
 | `MERGE_CONFIG_PATH` | — | Optional JSON merge rules for multi-camera (`backend/merge.example.json`) |
+| `PARKINGSPOTTER_PROJECTS_TOKEN` | — | Bearer token required on project writes (`POST /projects`, `PATCH /projects/{id}`, `POST /projects/{id}/assets`, `POST /projects/import`). Unset = open writes plus a startup warning (local dev only) |
+| `PARKINGSPOTTER_MAX_UPLOAD_MB` | `512` | Max project asset upload and import ZIP size (`413` above it) |
+| `PARKINGSPOTTER_MAX_ZIP_ENTRIES` | `2000` | Max entries in an imported project ZIP |
+| `PARKINGSPOTTER_MAX_ZIP_UNCOMPRESSED_MB` | `1024` | Max total uncompressed size of an imported project ZIP |
 | `CAMERA_OFFLINE_AFTER_SECONDS` | `120` | Default stale-camera threshold used by `GET /cameras` |
 | `PARKINGSPOTTER_SEED_DWELL_DEMO` | — | If `true`/`1`/`on`, inserts **past** synthetic `spot_history` for demo spots so dwell stats populate quickly (**dev/demo only**). |
 | `PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR` | — | If `true`, runs the dwell “soon” checker even when `SIMULATOR=true` (default is simulator **or** checker, not both). |

@@ -66,6 +66,22 @@ Reads stay open: `GET /projects`, `GET /projects/{id}`,
   loads the page. Docs must say a publicly served frontend must not set it.
 - **No new dependencies.**
 
+### Decisions made during implementation
+
+- **The guard covers every mutating method under `/projects`** (`POST`,
+  `PUT`, `PATCH`, `DELETE` on `/projects` and `/projects/...`), not a list of
+  four routes, so a future write route is protected by default and trailing
+  slash variants can't slip past. `OPTIONS` (CORS preflight) and reads pass.
+- **JSON writes (create, patch) are capped at 1 MB.** They carry a small
+  manifest; assets travel as uploads. Multipart requests get the upload cap
+  plus 1 MB for multipart framing, so a file of exactly the cap still fits.
+- **Bodies without `Content-Length` are counted as they stream** and stopped
+  with `413` the moment they cross the limit.
+- **`HybridStreetMapView.tsx` gets error-text changes only:** its four project
+  write `catch` blocks now append the 401/413 reason ("projects token missing
+  or wrong", "too large for the backend size limit") so the manual 401 check
+  in `validation.md` is observable. No behaviour or feature change.
+
 ## Context
 
 - Guardrails (`AGENTS.md`): every write endpoint ships with auth and size
@@ -82,5 +98,4 @@ Reads stay open: `GET /projects`, `GET /projects/{id}`,
   `frontend/ENV_EXAMPLE.txt`, `README.md` (config table and API table, which
   also lacks `PATCH` and `GET /projects/{id}` today), `backend/README.md` if it
   documents env vars.
-- `HybridStreetMapView.tsx` should not need edits if all project calls go
-  through `api.ts`; touch it only if a call bypasses `api.ts`.
+- `HybridStreetMapView.tsx`: error-message text only (see the decision above).
