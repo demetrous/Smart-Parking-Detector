@@ -21,6 +21,8 @@ BUSY_TIMEOUT_MS = 5000
 
 HISTORY_RETENTION_ENV = "PARKINGSPOTTER_HISTORY_RETENTION_DAYS"
 DEFAULT_HISTORY_RETENTION_DAYS = 90
+# Upper bound (~100 years). Much larger values overflow the cutoff date arithmetic.
+MAX_HISTORY_RETENTION_DAYS = 36500
 
 # Databases already switched to WAL in this process. journal_mode=WAL is stored in
 # the database file, so it only needs setting once per path (single-process backend).
@@ -346,6 +348,14 @@ def history_retention_days() -> int:
             DEFAULT_HISTORY_RETENTION_DAYS,
         )
         return DEFAULT_HISTORY_RETENTION_DAYS
+    if days > MAX_HISTORY_RETENTION_DAYS:
+        log.warning(
+            "%s=%d is too large; using %d days",
+            HISTORY_RETENTION_ENV,
+            days,
+            MAX_HISTORY_RETENTION_DAYS,
+        )
+        return MAX_HISTORY_RETENTION_DAYS
     return days
 
 

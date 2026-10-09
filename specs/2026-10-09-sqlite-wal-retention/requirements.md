@@ -23,7 +23,7 @@ Prevent `database is locked` incidents under pilot load and stop
 
 | Variable | Service | Default | Meaning |
 |----------|---------|---------|---------|
-| `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` | backend | `90` | Delete `spot_history` sessions that ended more than this many days ago. `0` keeps history forever. Invalid or negative values log a warning and use `90`. |
+| `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` | backend | `90` | Delete `spot_history` sessions that ended more than this many days ago. `0` keeps history forever. Invalid or negative values log a warning and use `90`. Values above `36500` (100 years) log a warning and are capped at `36500`, since larger ones overflow the cutoff date. |
 
 ### Out of scope
 
