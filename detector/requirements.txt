@@ -1,5 +1,5 @@
 ultralytics>=8.4.41
-opencv-python>=4.13.0.92
+opencv-python>=4.13.0.92,<5
 httpx>=0.28.1
 numpy>=2.4.4
 fastapi>=0.136.1
