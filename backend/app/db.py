@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import statistics
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
@@ -13,6 +15,16 @@ log = logging.getLogger(__name__)
 
 DB_PATH = Path(os.getenv("DB_PATH", "parking.db"))
 _ACTIVE_SESSION_STATUSES = {"occupied", "soon"}
+
+# Per-connection wait for a competing lock before SQLite raises "database is locked".
+BUSY_TIMEOUT_MS = 5000
+
+HISTORY_RETENTION_ENV = "PARKINGSPOTTER_HISTORY_RETENTION_DAYS"
+DEFAULT_HISTORY_RETENTION_DAYS = 90
+
+# Databases already switched to WAL in this process. journal_mode=WAL is stored in
+# the database file, so it only needs setting once per path (single-process backend).
+_wal_checked: set[str] = set()
 
 _CREATE_SPOTS = """
 CREATE TABLE IF NOT EXISTS spots (
@@ -56,8 +68,41 @@ CREATE TABLE IF NOT EXISTS spot_observations (
 """
 
 
+def _db_key(path: Path | str) -> str:
+    raw = str(path)
+    if raw == ":memory:" or raw.startswith("file:"):
+        return raw
+    return str(Path(raw).resolve())
+
+
+@asynccontextmanager
+async def connect() -> AsyncIterator[aiosqlite.Connection]:
+    """Open a connection to ``DB_PATH``. Every database operation goes through here.
+
+    Sets ``busy_timeout`` on each connection and switches the database to WAL the
+    first time this process opens it, so readers never block on the detector's
+    writes and short write overlaps wait instead of failing.
+    """
+    path = DB_PATH
+    async with aiosqlite.connect(path) as db:
+        await db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        key = _db_key(path)
+        if key not in _wal_checked:
+            async with db.execute("PRAGMA journal_mode=WAL") as cursor:
+                row = await cursor.fetchone()
+            mode = str(row[0]).lower() if row else "unknown"
+            if mode != "wal":
+                log.warning(
+                    "SQLite at %s is in journal_mode=%s, not WAL; readers may block on writes",
+                    path,
+                    mode,
+                )
+            _wal_checked.add(key)
+        yield db
+
+
 async def init_db() -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connect() as db:
         await db.execute(_CREATE_SPOTS)
         await db.execute(_CREATE_HISTORY)
         await db.execute(_CREATE_OBSERVATIONS)
@@ -72,7 +117,7 @@ async def append_spot_history_row(
     recorded_at: datetime,
 ) -> None:
     """Append one row to spot_history without updating the spots table (dev tooling)."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connect() as db:
         await db.execute(
             """
             INSERT INTO spot_history (spot_id, status, confidence, recorded_at)
@@ -121,7 +166,7 @@ async def upsert_spot_db(
     ``updatedAt``. Tests may pass *history_recorded_at* explicitly.
     """
     history_at = history_recorded_at or datetime.now(timezone.utc)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connect() as db:
         await db.execute(
             """
             INSERT INTO spots (id, lat, lng, status, confidence, camera_id, updated_at)
@@ -157,7 +202,7 @@ async def upsert_spot_db(
 async def load_spots_db() -> list[tuple]:
     """Return all persisted spots on startup."""
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with connect() as db:
             async with db.execute(
                 "SELECT id, lat, lng, status, confidence, camera_id, updated_at FROM spots"
             ) as cursor:
@@ -171,7 +216,7 @@ async def upsert_observation_db(spot) -> None:  # type: ignore[no-untyped-def]
     """Persist one camera's view of a spot (multi-camera ingest)."""
     if not spot.cameraId:
         return
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connect() as db:
         await db.execute(
             """
             INSERT INTO spot_observations (spot_id, camera_id, lat, lng, status, confidence, updated_at)
@@ -199,7 +244,7 @@ async def upsert_observation_db(spot) -> None:  # type: ignore[no-untyped-def]
 async def load_observations_db() -> list[tuple]:
     """Return all per-camera observations."""
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with connect() as db:
             async with db.execute(
                 "SELECT spot_id, camera_id, lat, lng, status, confidence, updated_at "
                 "FROM spot_observations"
@@ -246,7 +291,7 @@ async def query_dwell_db(spot_id: str) -> dict:
     and the next transition *out* of those states (back to available).
     Returns {"count": int, "mean": float | None, "stddev": float | None}.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connect() as db:
         async with db.execute(
             "SELECT status, recorded_at FROM spot_history "
             "WHERE spot_id = ? ORDER BY recorded_at ASC",
@@ -268,7 +313,7 @@ async def query_dwell_db(spot_id: str) -> dict:
 
 async def occupied_since_db(spot_id: str) -> datetime | None:
     """Return when the current occupied/soon session started, if any."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connect() as db:
         async with db.execute(
             "SELECT status, recorded_at FROM spot_history "
             "WHERE spot_id = ? ORDER BY recorded_at ASC",
@@ -282,3 +327,73 @@ async def occupied_since_db(spot_id: str) -> datetime | None:
 
     start, end = sessions[-1]
     return start if end is None else None
+
+
+def history_retention_days() -> int:
+    """Return the configured ``spot_history`` retention in days (``0`` = keep forever)."""
+    raw = os.getenv(HISTORY_RETENTION_ENV, "").strip()
+    if not raw:
+        return DEFAULT_HISTORY_RETENTION_DAYS
+    try:
+        days = int(raw)
+    except ValueError:
+        days = -1
+    if days < 0:
+        log.warning(
+            "Ignoring invalid %s=%r; using %d days",
+            HISTORY_RETENTION_ENV,
+            raw,
+            DEFAULT_HISTORY_RETENTION_DAYS,
+        )
+        return DEFAULT_HISTORY_RETENTION_DAYS
+    return days
+
+
+async def prune_history_db(retention_days: int, *, now: datetime | None = None) -> int:
+    """Delete ``spot_history`` sessions that ended more than *retention_days* ago.
+
+    Works on whole dwell sessions so dwell stats inside the window are unchanged:
+    for each spot, rows strictly older than its latest ``available`` row before the
+    cutoff are deleted. Everything they belonged to closed before the cutoff. A
+    session that straddles the cutoff, and the spot's current open session, are
+    kept in full however old they are. Each spot is pruned in its own short write
+    transaction so ingest is never locked out for long.
+
+    Returns the number of rows deleted. ``retention_days <= 0`` deletes nothing.
+    """
+    if retention_days <= 0:
+        return 0
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    cutoff = (current - timedelta(days=retention_days)).astimezone(timezone.utc).isoformat()
+
+    deleted = 0
+    async with connect() as db:
+        async with db.execute(
+            "SELECT DISTINCT spot_id FROM spot_history WHERE recorded_at < ?",
+            (cutoff,),
+        ) as cursor:
+            spot_ids = [row[0] for row in await cursor.fetchall()]
+
+        for spot_id in spot_ids:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                async with db.execute(
+                    "SELECT MAX(recorded_at) FROM spot_history "
+                    "WHERE spot_id = ? AND status = 'available' AND recorded_at < ?",
+                    (spot_id, cutoff),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                boundary = row[0] if row else None
+                if boundary is not None:
+                    cursor = await db.execute(
+                        "DELETE FROM spot_history WHERE spot_id = ? AND recorded_at < ?",
+                        (spot_id, boundary),
+                    )
+                    deleted += max(cursor.rowcount, 0)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+    return deleted

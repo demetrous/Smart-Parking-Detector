@@ -34,10 +34,12 @@ Spec: [`2026-10-09-secure-projects-api/`](2026-10-09-secure-projects-api/require
 **Goal:** No `database is locked` under pilot load; `spot_history` stops
 growing without bound.
 
-- [ ] Shared connection helper with WAL + busy_timeout
-- [ ] Retention task + startup pass
-- [ ] Open-session preservation rule
-- [ ] Tests + docs
+Spec: [`2026-10-09-sqlite-wal-retention/`](2026-10-09-sqlite-wal-retention/requirements.md)
+
+- [x] Shared connection helper with WAL + busy_timeout
+- [x] Retention task + startup pass
+- [x] Open-session preservation rule
+- [x] Tests + docs
 
 ---
 

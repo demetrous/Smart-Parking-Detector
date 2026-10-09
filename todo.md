@@ -37,7 +37,7 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 12. `P3.3` Pilot product-layer endpoints `Completed Apr 24, 2026`
 13. `P3.4` Synthetic 3D street simulation and live visual overlay `Completed Apr 24, 2026`
 14. `R0.1` Secure the projects API — **implemented, in review** (`specs/2026-10-09-secure-projects-api/`)
-15. `R0.2` SQLite durability + history retention — **pending**
+15. `R0.2` SQLite durability + history retention — **implemented, in review** (`specs/2026-10-09-sqlite-wal-retention/`)
 16. `R0.3` "Soon" lifecycle correctness — **pending**
 17. `R1.1` Occupancy metric v2 (polygon coverage) — **pending**
 18. `R1.2` Real-camera pilot + labeled benchmark — **pending**
@@ -605,10 +605,10 @@ Prevent `database is locked` incidents under pilot load and stop unbounded `spot
 
 **Progress**
 
-- [ ] Shared connection helper with WAL + busy_timeout
-- [ ] Retention task + startup pass
-- [ ] Open-session preservation rule
-- [ ] Tests + docs
+- [x] Shared connection helper with WAL + busy_timeout
+- [x] Retention task + startup pass
+- [x] Open-session preservation rule
+- [x] Tests + docs
 
 ### `R0.3` "Soon" lifecycle correctness
 

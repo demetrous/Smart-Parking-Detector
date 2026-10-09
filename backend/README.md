@@ -38,7 +38,7 @@ The backend container:
 - exposes `/health` for healthchecks
 - expects `PARKINGSPOTTER_SHARED_SECRET` to match the detector when real ingest is enabled
 
-**Production / pilot notes:** back up the SQLite file backing `DB_PATH` regularly; set `CORS_ORIGINS` to your real frontend origin; use `MERGE_CONFIG_PATH` when multiple cameras can see the same spot IDs. Keep the shared detector secret out of version control.
+**Production / pilot notes:** back up the SQLite database backing `DB_PATH` regularly with `sqlite3 parking.db ".backup parking-backup.db"` (WAL mode keeps recent writes in `parking.db-wal`, so copying only the `.db` file can miss them); set `CORS_ORIGINS` to your real frontend origin; use `MERGE_CONFIG_PATH` when multiple cameras can see the same spot IDs. Keep the shared detector secret out of version control.
 
 ## Tests
 
@@ -51,12 +51,14 @@ Current backend coverage includes:
 - signed vs unsigned detector ingest
 - dwell-session parsing
 - SQLite spot upsert behavior
+- SQLite WAL + busy_timeout and `spot_history` retention
 
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_PATH` | `parking.db` | SQLite database file path |
+| `DB_PATH` | `parking.db` | SQLite database file path (WAL mode; needs a local filesystem) |
+| `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` | `90` | Delete `spot_history` sessions that ended more than this many days ago, once at startup and then daily. A spot's open session and any session that crosses the cutoff are kept whole. `0` keeps history forever; invalid values log a warning and use `90` |
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | — | Required in production for signed `POST /spots` (must match detector) |
 | `MERGE_CONFIG_PATH` | — | Optional JSON merge rules for multi-camera (`backend/merge.example.json`) |
@@ -116,10 +118,13 @@ WebSocket endpoint. Clients connect here to receive real-time `spot.update` even
 
 ## Database
 
-Two SQLite tables:
+SQLite tables:
 
 - **`spots`** — current state mirror, one row per spot. Restored on restart so the map is never empty.
-- **`spot_history`** — append-only log of every status change. Foundation for dwell-time "soon" predictions in Phase 3.
+- **`spot_observations`** — latest view of each spot per camera, for multi-camera merge.
+- **`spot_history`** — log of every status change. Foundation for dwell-time "soon" predictions. Kept for `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` (default 90): whole dwell sessions that ended before the cutoff are deleted, a session crossing the cutoff and a spot's current open session are kept, so dwell stats inside the window never change.
+
+Every query opens its connection through `db.connect()`, which sets `busy_timeout=5000` and puts the database in WAL mode, so map reads never wait on detector writes and short write overlaps wait instead of failing with `database is locked`. WAL adds `parking.db-wal` and `parking.db-shm` next to the database; they are part of it.
 
 ## Privacy posture for pilots
 

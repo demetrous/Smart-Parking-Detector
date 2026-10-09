@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import random
 from contextlib import asynccontextmanager
@@ -14,10 +15,12 @@ from fastapi.responses import FileResponse, Response
 
 from .auth import HEADER_SIGNATURE, HEADER_TIMESTAMP, verify_signed_detector_request
 from .db import (
+    history_retention_days,
     init_db,
     load_observations_db,
     load_spots_db,
     occupied_since_db,
+    prune_history_db,
     query_dwell_db,
     seed_dwell_demo_sparse,
 )
@@ -36,6 +39,8 @@ from .project_store import (
     save_project_asset,
 )
 from .store import SpotStore
+
+log = logging.getLogger(__name__)
 
 store = SpotStore()
 hub = Hub()
@@ -139,6 +144,34 @@ async def dwell_checker_loop() -> None:
 
 
 # -----------------------------
+# History retention
+# -----------------------------
+
+_HISTORY_RETENTION_INTERVAL_SECONDS = 24 * 60 * 60
+
+
+async def prune_history_once(retention_days: int) -> int:
+    """One retention pass over spot_history; returns rows deleted."""
+    deleted = await prune_history_db(retention_days)
+    log.info(
+        "History retention: removed %d spot_history rows from sessions older than %d days",
+        deleted,
+        retention_days,
+    )
+    return deleted
+
+
+async def history_retention_loop(retention_days: int) -> None:
+    """Prune spot_history once a day. A failed pass is logged and retried next day."""
+    while True:
+        await asyncio.sleep(_HISTORY_RETENTION_INTERVAL_SECONDS)
+        try:
+            await prune_history_once(retention_days)
+        except Exception:
+            log.exception("History retention pass failed; retrying in the next cycle")
+
+
+# -----------------------------
 # Lifespan
 # -----------------------------
 
@@ -163,6 +196,13 @@ _DEMO_SEEDS: list[Spot] = [
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
 
+    retention_days = history_retention_days()
+    if retention_days > 0:
+        try:
+            await prune_history_once(retention_days)
+        except Exception:
+            log.exception("Startup history retention pass failed; continuing")
+
     rows = await load_spots_db()
     obs_rows = await load_observations_db()
     if rows or obs_rows:
@@ -179,6 +219,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _spawn_background(simulator_loop())
     if _dwell_checker_enabled():
         _spawn_background(dwell_checker_loop())
+    if retention_days > 0:
+        _spawn_background(history_retention_loop(retention_days))
     yield
 
 
