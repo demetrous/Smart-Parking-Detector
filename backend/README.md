@@ -130,7 +130,8 @@ A spot's published status comes from two sources: the **base** state (the multi-
 - New detector observations recompute the base; while the base stays `occupied`, an active promotion keeps the spot published as `soon`.
 - If the car is still there at `SOON_DEMOTE_FACTOR` × mean dwell, the promotion is demoted and the spot is published as `occupied` again. It is not promoted again until the base goes `available`.
 - Detector motion `soon` always passes through unchanged. An `available` observation ends the session and clears the promotion. Simulator and seed writes also clear it.
-- Promotion state is in memory (single process). After a restart the checker re-promotes spots that are still inside the promotion window.
+- Promotion state is in memory (single process). On restart a stored dwell `soon` is published as `occupied` again (and logged); the checker re-promotes spots that are still inside the promotion window. A stored `soon` without camera observations counts as a dwell promotion when its open history session saw `occupied` first; a `soon` that started its session (demo seed `C8`) is kept, and camera-backed spots are rebuilt from their observations. A legacy `soon` post without `cameraId` also shows `occupied` after a restart until the next post.
+- The checker passes each spot's occupancy-session counter back to the store, so if the car leaves, or leaves and a new one parks, while a pass is querying SQLite, that pass does not promote or demote the spot.
 
 Each change is broadcast as `spot.update` and appended to `spot_history`; `soon`/`occupied` rows inside one session do not affect dwell statistics.
 

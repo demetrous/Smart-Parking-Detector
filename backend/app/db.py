@@ -331,6 +331,28 @@ async def occupied_since_db(spot_id: str) -> datetime | None:
     return start if end is None else None
 
 
+async def current_session_statuses_db(spot_id: str) -> list[str]:
+    """Return the statuses recorded in the spot's open occupied/soon session, oldest first.
+
+    Empty when there is no history or the last session already ended (``available``).
+    """
+    async with connect() as db:
+        async with db.execute(
+            "SELECT status, recorded_at FROM spot_history "
+            "WHERE spot_id = ? ORDER BY recorded_at ASC",
+            (spot_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+    statuses: list[str] = []
+    for status, _recorded_at in rows:
+        if status in _ACTIVE_SESSION_STATUSES:
+            statuses.append(status)
+        elif status == "available":
+            statuses = []
+    return statuses
+
+
 def history_retention_days() -> int:
     """Return the configured ``spot_history`` retention in days (``0`` = keep forever)."""
     raw = os.getenv(HISTORY_RETENTION_ENV, "").strip()
