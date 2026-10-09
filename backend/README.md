@@ -52,6 +52,7 @@ Current backend coverage includes:
 - dwell-session parsing
 - SQLite spot upsert behavior
 - SQLite WAL + busy_timeout and `spot_history` retention
+- dwell "soon" lifecycle: promotion, merge composition, demotion
 
 ## Environment variables
 
@@ -68,6 +69,11 @@ Current backend coverage includes:
 | `PARKINGSPOTTER_MAX_ZIP_UNCOMPRESSED_MB` | `1024` | Max total uncompressed size of an imported project ZIP |
 | `CAMERA_OFFLINE_AFTER_SECONDS` | `120` | Default stale-camera threshold used by `GET /cameras` |
 | `PARKINGSPOTTER_SEED_DWELL_DEMO` | — | If `true`/`1`/`on`, inserts **past** synthetic `spot_history` for demo spots so dwell stats populate quickly (**dev/demo only**). |
+| `SOON_THRESHOLD` | `0.7` | Fraction of mean dwell after which the dwell checker promotes an occupied spot to `soon` |
+| `SOON_DEMOTE_FACTOR` | `1.3` | Multiple of mean dwell after which a dwell promotion that missed (car still there) is demoted back to `occupied`; no re-promotion until the spot goes `available`. Must be greater than `SOON_THRESHOLD`, otherwise promotions are off and a warning is logged. Invalid values log a warning and use `1.3` |
+| `DWELL_MIN_COUNT` | `3` | Completed dwell sessions a spot needs before the checker acts on it |
+| `DWELL_CHECK_INTERVAL` | `15.0` | Seconds between dwell checker passes |
+| `PARKINGSPOTTER_LOG_LEVEL` | `INFO` | Level for the backend's `app.*` loggers. Under plain `uvicorn` (no `--log-config`) the backend attaches its own stream handler so these lines are printed. Invalid values log a warning and use `INFO` |
 | `PARKINGSPOTTER_DWELL_CHECK_WITH_SIMULATOR` | — | If `true`, runs the dwell “soon” checker even when `SIMULATOR=true` (default is simulator **or** checker, not both). |
 
 ## API Reference
@@ -115,6 +121,18 @@ WebSocket endpoint. Clients connect here to receive real-time `spot.update` even
   "payload": { ...spot }
 }
 ```
+
+## "Soon" lifecycle
+
+A spot's published status comes from two sources: the **base** state (the multi-camera merge of detector observations, or the latest direct write) and the **dwell checker**.
+
+- The checker promotes a spot to `soon` when its base is `occupied` and the current session has lasted `SOON_THRESHOLD` × its mean dwell (and less than `SOON_DEMOTE_FACTOR` × mean).
+- New detector observations recompute the base; while the base stays `occupied`, an active promotion keeps the spot published as `soon`.
+- If the car is still there at `SOON_DEMOTE_FACTOR` × mean dwell, the promotion is demoted and the spot is published as `occupied` again. It is not promoted again until the base goes `available`.
+- Detector motion `soon` always passes through unchanged. An `available` observation ends the session and clears the promotion. Simulator and seed writes also clear it.
+- Promotion state is in memory (single process). After a restart the checker re-promotes spots that are still inside the promotion window.
+
+Each change is broadcast as `spot.update` and appended to `spot_history`; `soon`/`occupied` rows inside one session do not affect dwell statistics.
 
 ## Database
 

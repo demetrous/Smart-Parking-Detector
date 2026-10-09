@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import random
 from contextlib import asynccontextmanager
@@ -97,50 +98,122 @@ async def simulator_loop() -> None:
         )
 
 
-# SOON_THRESHOLD  – fraction of mean dwell after which an occupied spot is
-#                   promoted to "soon".  Default 0.7 (70 %).
-# DWELL_MIN_COUNT – minimum completed dwell samples required before the
-#                   checker acts (avoids acting on too little history).
+# SOON_THRESHOLD     – fraction of mean dwell after which an occupied spot is
+#                      promoted to "soon".  Default 0.7 (70 %).
+# SOON_DEMOTE_FACTOR – multiple of mean dwell after which a dwell promotion that
+#                      missed (car still there) goes back to "occupied".
+#                      Default 1.3; must be greater than SOON_THRESHOLD.
+# DWELL_MIN_COUNT    – minimum completed dwell samples required before the
+#                      checker acts (avoids acting on too little history).
 _SOON_THRESHOLD = float(os.getenv("SOON_THRESHOLD", "0.7"))
+_DEFAULT_SOON_DEMOTE_FACTOR = 1.3
 _DWELL_MIN_COUNT = int(os.getenv("DWELL_MIN_COUNT", "3"))
 _DWELL_CHECK_INTERVAL = float(os.getenv("DWELL_CHECK_INTERVAL", "15.0"))
 _CAMERA_OFFLINE_AFTER_SECONDS = float(os.getenv("CAMERA_OFFLINE_AFTER_SECONDS", "120"))
 
 
+def soon_demote_factor() -> float:
+    """Return ``SOON_DEMOTE_FACTOR`` (default 1.3); invalid values warn and use the default."""
+    raw = os.getenv("SOON_DEMOTE_FACTOR", "").strip()
+    if not raw:
+        return _DEFAULT_SOON_DEMOTE_FACTOR
+    try:
+        factor = float(raw)
+    except ValueError:
+        factor = float("nan")
+    if not math.isfinite(factor) or factor <= 0:
+        log.warning(
+            "Invalid SOON_DEMOTE_FACTOR=%r; using %s", raw, _DEFAULT_SOON_DEMOTE_FACTOR
+        )
+        return _DEFAULT_SOON_DEMOTE_FACTOR
+    return factor
+
+
+_SOON_DEMOTE_FACTOR = soon_demote_factor()
+
+
+async def dwell_check_once(
+    now: datetime | None = None,
+    *,
+    threshold: float | None = None,
+    demote_factor: float | None = None,
+    min_count: int | None = None,
+) -> None:
+    """One dwell-checker pass: promote occupied spots to 'soon', demote missed promotions.
+
+    Promotion window: ``threshold * mean <= elapsed < demote_factor * mean``, measured from
+    the start of the current occupancy session. The upper bound keeps a restart (which
+    loses promotion bookkeeping) from promoting a spot that is already past the demote
+    point. A demoted spot is not promoted again until its session ends.
+    """
+    now = now or datetime.now(timezone.utc)
+    threshold = _SOON_THRESHOLD if threshold is None else threshold
+    demote_factor = _SOON_DEMOTE_FACTOR if demote_factor is None else demote_factor
+    min_count = _DWELL_MIN_COUNT if min_count is None else min_count
+
+    for spot_id, base_status, promotion in await store.dwell_snapshot():
+        if promotion is not None and not promotion.active:
+            continue
+        if promotion is None and base_status != "occupied":
+            continue
+        dwell = await query_dwell_db(spot_id)
+        if dwell["mean"] is None or dwell["count"] < min_count:
+            continue
+        since = await occupied_since_db(spot_id)
+        if since is None:
+            continue
+        elapsed = max(0.0, (now - since).total_seconds())
+        mean = dwell["mean"]
+
+        if promotion is None:
+            if not (threshold * mean <= elapsed < demote_factor * mean):
+                continue
+            result = await store.promote_dwell(spot_id, now)
+            action = "promoted to soon"
+        else:
+            if elapsed < demote_factor * mean:
+                continue
+            result = await store.demote_dwell(spot_id, now)
+            action = "demoted, prediction missed"
+
+        if not result.applied or result.spot is None:
+            continue
+        log.info(
+            "Dwell check: spot %s %s after %.0fs occupied (mean dwell %.0fs); published %s",
+            spot_id,
+            action,
+            elapsed,
+            mean,
+            result.spot.status,
+        )
+        if result.changed:
+            await hub.broadcast(
+                Event(type="spot.update", payload=result.spot.model_dump(mode="json"))
+            )
+
+
 async def dwell_checker_loop() -> None:
-    """Promote occupied spots to 'soon' when dwell-time threshold is crossed.
+    """Promote occupied spots to 'soon' when the dwell threshold is crossed, and demote
+    promotions that missed (car still there past SOON_DEMOTE_FACTOR x mean dwell).
 
     Requires at least DWELL_MIN_COUNT completed dwell samples in spot_history
     so the checker only acts once there is meaningful historical data.
     Designed to run alongside the real detector (simulator disabled).
+    A failing pass is logged and retried on the next interval.
     """
+    if _SOON_DEMOTE_FACTOR <= _SOON_THRESHOLD:
+        log.warning(
+            "SOON_DEMOTE_FACTOR (%s) must be greater than SOON_THRESHOLD (%s); "
+            "dwell 'soon' promotions are disabled",
+            _SOON_DEMOTE_FACTOR,
+            _SOON_THRESHOLD,
+        )
     while True:
         await asyncio.sleep(_DWELL_CHECK_INTERVAL)
-        spots = await store.list_canonical()
-        for spot in spots:
-            if spot.status != "occupied":
-                continue
-            dwell = await query_dwell_db(spot.id)
-            if dwell["mean"] is None or dwell["count"] < _DWELL_MIN_COUNT:
-                continue
-            since = await occupied_since_db(spot.id)
-            if since is None:
-                continue
-            elapsed = max(
-                0.0,
-                (datetime.now(timezone.utc) - since).total_seconds(),
-            )
-            if elapsed >= _SOON_THRESHOLD * dwell["mean"]:
-                updated = spot.model_copy(
-                    update={
-                        "status": "soon",
-                        "updatedAt": datetime.now(timezone.utc),
-                    }
-                )
-                await store.upsert_canonical(updated)
-                await hub.broadcast(
-                    Event(type="spot.update", payload=updated.model_dump(mode="json"))
-                )
+        try:
+            await dwell_check_once()
+        except Exception:
+            log.exception("Dwell check pass failed; retrying in the next cycle")
 
 
 # -----------------------------
@@ -229,7 +302,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # -----------------------------
 
 
+_LOG_FORMAT = "%(levelname)-9s %(name)s: %(message)s"
+
+
+def _configure_app_logging() -> None:
+    """Make the backend's own ``app.*`` INFO lines visible under plain ``uvicorn``.
+
+    uvicorn configures only its own loggers, so without this the retention and
+    dwell-check lines are dropped (and warnings print without a level or name).
+    Does nothing when the root or ``app`` logger already has handlers (a
+    ``--log-config``, a test harness), to avoid duplicate lines.
+    """
+    app_logger = logging.getLogger(__name__.partition(".")[0])
+    if app_logger.handlers or logging.getLogger().handlers:
+        return
+    raw = os.getenv("PARKINGSPOTTER_LOG_LEVEL", "").strip().upper() or "INFO"
+    level = logging.getLevelName(raw)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    app_logger.addHandler(handler)
+    if not isinstance(level, int):
+        app_logger.setLevel(logging.INFO)
+        app_logger.warning("Invalid PARKINGSPOTTER_LOG_LEVEL=%r; using INFO", raw)
+    else:
+        app_logger.setLevel(level)
+
+
 def create_app() -> FastAPI:
+    _configure_app_logging()
     app = FastAPI(title="ParkingSpotter Backend", version="0.2.0", lifespan=lifespan)
 
     # Added before CORS so CORS stays outermost and 401/413 responses carry its headers.
