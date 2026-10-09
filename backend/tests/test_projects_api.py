@@ -4,6 +4,7 @@ import io
 import json
 import os
 import shutil
+import struct
 import zipfile
 
 import pytest
@@ -13,12 +14,22 @@ from app import db, main, project_store
 from app.hub import Hub
 from app.store import SpotStore
 
+_PROJECT_LIMIT_ENVS = (
+    "PARKINGSPOTTER_PROJECTS_TOKEN",
+    "PARKINGSPOTTER_MAX_UPLOAD_MB",
+    "PARKINGSPOTTER_MAX_ZIP_ENTRIES",
+    "PARKINGSPOTTER_MAX_ZIP_UNCOMPRESSED_MB",
+)
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "projects.db")
     monkeypatch.setattr(project_store, "PROJECTS_DIR", tmp_path / "projects")
     monkeypatch.setenv("SIMULATOR", "false")
+    # Start from defaults even when the developer's shell sets these (e.g. the token).
+    for env in _PROJECT_LIMIT_ENVS:
+        monkeypatch.delenv(env, raising=False)
     monkeypatch.setattr(main, "store", SpotStore())
     monkeypatch.setattr(main, "hub", Hub())
     monkeypatch.setattr(main, "dwell_checker_loop", lambda: _noop_loop())
@@ -162,6 +173,31 @@ def test_project_writes_open_without_token(client: TestClient, monkeypatch: pyte
     monkeypatch.delenv("PARKINGSPOTTER_PROJECTS_TOKEN", raising=False)
 
     assert client.post("/projects", json={"name": "Open"}).status_code == 200
+    assert client.patch("/projects/open", json={"name": "Still open"}).status_code == 200
+    assert (
+        client.post(
+            "/projects/open/assets?kind=media",
+            files={"file": ("street.png", b"fake image", "image/png")},
+        ).status_code
+        == 200
+    )
+    zip_payload = _zip_bytes({"project.json": _manifest_json("open-import")})
+    assert (
+        client.post("/projects/import", files={"file": ("p.zip", zip_payload, "application/zip")}).status_code
+        == 200
+    )
+
+
+def test_project_writes_require_token_behind_root_path(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # uvicorn --root-path puts the prefix into scope["path"]; the router strips it.
+    monkeypatch.setenv("PARKINGSPOTTER_PROJECTS_TOKEN", TOKEN)
+    prefixed = TestClient(client.app, root_path="/api")
+
+    assert prefixed.post("/api/projects", json={"name": "Prefixed"}).status_code == 401
+    assert not (project_store.PROJECTS_DIR / "prefixed").exists()
+    assert prefixed.post("/api/projects", json={"name": "Prefixed"}, headers=AUTH).status_code == 200
 
 
 def test_missing_token_logs_startup_warning(
@@ -223,6 +259,7 @@ def test_oversized_content_length_is_rejected_before_body_is_read(
     )
 
     assert response.status_code == 413
+    assert response.json()["detail"] == "Request body exceeds the 512 MB limit"
     assert calls == []
 
 
@@ -291,3 +328,56 @@ def test_zip_file_over_upload_limit_is_rejected(client: TestClient, monkeypatch:
 
     assert response.status_code == 413
     assert not (project_store.PROJECTS_DIR / "heavy").exists()
+
+
+def test_streamed_multipart_over_limit_is_rejected(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import projects_auth
+
+    client.post("/projects", json={"name": "Chunked"})
+    monkeypatch.setattr(projects_auth, "MULTIPART_OVERHEAD_BYTES", 0)
+    monkeypatch.setenv("PARKINGSPOTTER_MAX_UPLOAD_MB", "0.5")
+
+    def chunks():
+        yield (
+            b"--bnd\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="street.png"\r\n'
+            b"Content-Type: image/png\r\n\r\n"
+        )
+        for _ in range(3):
+            yield b"x" * (256 * 1024)
+        yield b"\r\n--bnd--\r\n"
+
+    response = client.post(
+        "/projects/chunked/assets?kind=media",
+        content=chunks(),
+        headers={"Content-Type": "multipart/form-data; boundary=bnd"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request body exceeds the 0.5 MB limit"
+    assets_dir = project_store.PROJECTS_DIR / "chunked" / "assets"
+    assert not assets_dir.exists() or not any(assets_dir.iterdir())
+
+
+def test_zip_with_invalid_manifest_is_rejected(client: TestClient) -> None:
+    payload = _zip_bytes({"project.json": b"not json"})
+
+    response = client.post("/projects/import", files={"file": ("bad.zip", payload, "application/zip")})
+
+    assert response.status_code == 400
+    assert client.get("/projects").json()["projects"] == []
+
+
+def test_zip_that_lies_about_sizes_is_rejected_without_leftovers(client: TestClient) -> None:
+    payload = bytearray(
+        _zip_bytes({"project.json": _manifest_json("liar"), "assets/big.bin": b"0" * (256 * 1024)})
+    )
+    info = zipfile.ZipFile(io.BytesIO(bytes(payload))).getinfo("assets/big.bin")
+    # Declare 10 bytes uncompressed in both the local header and the central directory.
+    struct.pack_into("<I", payload, info.header_offset + 22, 10)
+    struct.pack_into("<I", payload, payload.rfind(b"PK\x01\x02") + 24, 10)
+
+    response = client.post("/projects/import", files={"file": ("liar.zip", bytes(payload), "application/zip")})
+
+    assert response.status_code == 400
+    assert not (project_store.PROJECTS_DIR / "liar").exists()

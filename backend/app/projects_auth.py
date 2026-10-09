@@ -66,6 +66,11 @@ def max_zip_uncompressed_bytes() -> int:
     return int(_positive_number(MAX_ZIP_UNCOMPRESSED_MB_ENV, DEFAULT_MAX_ZIP_UNCOMPRESSED_MB) * _MB)
 
 
+def format_mb(num_bytes: int) -> str:
+    """Human-readable size for limit messages: 512 MB, 0.5 MB."""
+    return f"{num_bytes / _MB:g} MB"
+
+
 def payload_too_large(detail: str) -> HTTPException:
     return HTTPException(status_code=413, detail=detail)
 
@@ -81,6 +86,22 @@ def token_matches(authorization: str | None) -> bool:
     if scheme.lower() != "bearer":
         return False
     return hmac.compare_digest(supplied.strip().encode("utf-8"), expected.encode("utf-8"))
+
+
+def route_path(scope: Scope) -> str:
+    """The path the router matches on: scope["path"] minus any root_path.
+
+    Uvicorn's --root-path (and FastAPI(root_path=...)) put the prefix into
+    scope["path"], and Starlette strips it before routing. Matching the raw
+    path would let /projects writes skip the guard behind a path prefix.
+    """
+    path = scope["path"]
+    root_path = scope.get("root_path", "")
+    if root_path and path.startswith(root_path):
+        rest = path[len(root_path):]
+        if rest == "" or rest.startswith("/"):
+            return rest
+    return path
 
 
 def is_project_write(method: str, path: str) -> bool:
@@ -112,7 +133,7 @@ class ProjectWriteGuard:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not is_project_write(scope["method"], scope["path"]):
+        if scope["type"] != "http" or not is_project_write(scope["method"], route_path(scope)):
             await self.app(scope, receive, send)
             return
 
@@ -128,9 +149,11 @@ class ProjectWriteGuard:
 
         content_type = headers.get("content-type", "").lower()
         if content_type.startswith("multipart/"):
-            limit = max_upload_bytes() + MULTIPART_OVERHEAD_BYTES
+            stated_limit = max_upload_bytes()
+            limit = stated_limit + MULTIPART_OVERHEAD_BYTES
         else:
-            limit = MAX_JSON_BODY_BYTES
+            stated_limit = limit = MAX_JSON_BODY_BYTES
+        too_large_detail = f"Request body exceeds the {format_mb(stated_limit)} limit"
 
         declared = headers.get("content-length")
         if declared is not None:
@@ -140,7 +163,7 @@ class ProjectWriteGuard:
                 too_large = False  # malformed header: fall back to counting the stream
             if too_large:
                 response = JSONResponse(
-                    {"detail": f"Request body exceeds the {limit // _MB} MB limit"},
+                    {"detail": too_large_detail},
                     status_code=413,
                 )
                 await response(scope, receive, send)
@@ -154,7 +177,7 @@ class ProjectWriteGuard:
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > limit:
-                    raise payload_too_large(f"Request body exceeds the {limit // _MB} MB limit")
+                    raise payload_too_large(too_large_detail)
             return message
 
         await self.app(scope, limited_receive, send)
