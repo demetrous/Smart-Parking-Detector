@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import ParkingMap from './ParkingMap';
 import SimulationView from './SimulationView';
 import type { Spot } from '../types';
+import demoStreetViewUrl from '../assets/demo/first-ave-street-view.jpg';
 import {
   createProject,
   describeProjectError,
@@ -330,7 +331,7 @@ export default function HybridStreetMapView() {
   };
 
   const openProject = async (projectId: string) => {
-    if (!projectId) return;
+    if (!projectId) return null;
     setProjectStatus('Opening project...');
     try {
       const project = await fetchProject(projectId);
@@ -358,8 +359,25 @@ export default function HybridStreetMapView() {
         setGeometryResult((await geometryResponse.json()) as GeometryResponse);
       }
       setProjectStatus(`Opened ${project.name}`);
+      return project;
     } catch {
       setProjectStatus('Could not open project');
+      return null;
+    }
+  };
+
+  // Demo default: show the 1st Ave street view when there is no project media yet.
+  // Approved demo-freeze exception (AGENTS.md). Not saved to any project.
+  const loadDemoScreenshot = async () => {
+    try {
+      const blob = await (await fetch(demoStreetViewUrl)).blob();
+      const file = new File([blob], 'first-ave-street-view.jpg', { type: blob.type || 'image/jpeg' });
+      replaceMedia(file, 'image');
+      setStatus('detecting');
+      setDetectResult(await detectBlob(file));
+      setStatus('ready');
+    } catch {
+      setStatus('offline');
     }
   };
 
@@ -371,9 +389,12 @@ export default function HybridStreetMapView() {
         if (cancelled) return;
         const lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
         const projectToOpen = nextProjects.find((project) => project.id === lastProjectId) ?? nextProjects[0];
-        if (projectToOpen) await openProject(projectToOpen.id);
+        const opened = projectToOpen ? await openProject(projectToOpen.id) : null;
+        if (!cancelled && !opened?.media?.assetPath) await loadDemoScreenshot();
       } catch {
-        if (!cancelled) setProjectStatus('Projects unavailable');
+        if (cancelled) return;
+        setProjectStatus('Projects unavailable');
+        await loadDemoScreenshot();
       }
     })();
     return () => {
