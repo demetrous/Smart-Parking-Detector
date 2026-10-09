@@ -8,11 +8,19 @@ measured April 2026 multi-model round (`Project Review/`).
 
 Route by **tier**, not by brand name — model names age fast. Tier definitions:
 
-| Tier | Meaning | Examples (as of mid-2026) |
+_Examples last checked: 2026-10-09. Refresh this column at each quarterly
+reassessment or when a new model generation ships; the tiers themselves
+should rarely change._
+
+| Tier | Meaning | Examples (as of Oct 2026) |
 |------|---------|---------------------------|
-| Frontier reasoning | Best available reasoning/coding model | Claude 5 (Fable/Mythos), Claude Opus 4.8, GPT-5.x top tier, Gemini Pro top tier |
-| Mid-tier agentic coder | Fast, capable, spec-following coder | Claude Sonnet 5, Composer-class IDE agents |
-| Fast/cheap | Low-latency, low-cost | Claude Haiku 4.5 class |
+| Frontier reasoning | Best available reasoning/coding model | Claude Fable 5.1, Claude Opus 5.5, GPT-5.x top tier, Gemini Pro top tier |
+| Mid-tier agentic coder | Fast, capable, spec-following coder | Claude Sonnet 5.5, Composer-class IDE agents |
+| Fast/cheap | Low-latency, low-cost | Claude Haiku 5.5 class |
+
+**Effort before tier:** where a model offers an effort/reasoning setting, try
+raising effort on the routed tier before escalating a tier, and lowering it
+for mechanical work before dropping a tier.
 
 ---
 
@@ -30,9 +38,11 @@ Lessons from the April 2026 round that this table encodes:
 | Architecture arbitration, quarterly reassessment, consensus synthesis | **One** frontier reasoning model, plus at most one from a *different* family | Panels of 3+ are overkill (measured). Reserve for checkpoints, not per-task. |
 | Roadmap items with written acceptance criteria (todo.md style) | Mid-tier agentic coder | Frontier here is overkill; the spec carries the correctness. If no spec exists, escalate to "spec writing" first. |
 | Spec writing for new roadmap items | Frontier reasoning | The spec is the highest-leverage artifact in this repo's process. |
-| Cross-cutting correctness work: merge semantics, dwell model, occupancy metric, concurrency, auth | Frontier coder | These embed subtle invariants (event-log ordering, writer precedence). The April bug list is exactly the defect class mid-tier models introduce. Mid-tier is **too weak** here. |
+| Cross-cutting correctness work: merge semantics, dwell model, occupancy metric, concurrency, auth | Frontier reasoning | These embed subtle invariants (event-log ordering, writer precedence). The April bug list is exactly the defect class mid-tier models introduce. Mid-tier is **too weak** here. |
 | Post-merge verification review | One frontier model, **different from the implementer** | Verifier must run `pytest` + `npm run lint` + `npm run build` itself before filing findings, and must cite file/line evidence. One verifier, not a panel; rotate family occasionally. |
-| Tests-from-spec, docs sync, lint/CI chores, dependency bumps | Fast/cheap tier | Frontier for docs sync is pure overkill. |
+| Tests-from-spec | Mid-tier agentic coder | Tests encode the acceptance criteria; a weak test passes a wrong implementation. Written by a different model than the implementer of the same item. |
+| Docs sync, lint/CI chores | Fast/cheap tier | Frontier for docs sync is pure overkill. |
+| Dependency bumps | Fast/cheap for frontend/backend patch bumps; mid-tier for `ultralytics`, `torch`, `opencv-*` | Detector-stack bumps can change inference results: re-run `detector/benchmark.py`, and keep `opencv-python<5` until the OpenCV 5 experiment (runtime table) says otherwise. |
 | Fine-tuning scripts, benchmark plumbing | Mid-tier | Mechanical work against existing `benchmark.py` / `fine_tune_yolo11.py` patterns. |
 | Interpreting benchmark results; go/no-go on model or metric swaps | Frontier + human | Judgment calls with product consequences — never delegate fully. |
 | Large-file decomposition (e.g., `HybridStreetMapView.tsx`) | Frontier writes the decomposition plan; mid-tier executes it | Plan/execute split buys frontier judgment at mid-tier cost. |
@@ -47,6 +57,8 @@ Lessons from the April 2026 round that this table encodes:
 3. Implementer and verifier are never the same model for roadmap-item work.
 4. Every completed item ticks its checkboxes in `todo.md` and updates docs in
    the same change set.
+5. Dev-agent tier choices are reviewed at the quarterly reassessment, not per
+   task; the tier examples column and its "last checked" date are refreshed then.
 
 ---
 
@@ -57,6 +69,7 @@ Verdicts: ✅ right-sized · ⬆ upgrade path defined · ⛔ do not do.
 | Task | Current | Verdict + rule |
 |------|---------|----------------|
 | Per-frame vehicle detection | YOLO11n, CPU, frame-skip | ✅ Right-sized for 1–2 fixed cameras. ⬆ Move to `yolo11s` **only** if fine-tuned `11n` measurably misses on the pilot benchmark. Family swaps (YOLO12, RF-DETR) require benchmark evidence per process rule 1. |
+| Inference runtime | Ultralytics on PyTorch, CPU | ✅ Keep for the pilot. ⬆ Post-pilot: benchmark YOLO11n via PyTorch vs ONNX Runtime vs OpenCV 5 DNN on the labeled pilot footage (process rule 1). Dropping PyTorch also requires a standalone ByteTrack, since the "soon" motion signal currently uses Ultralytics' tracker. ⛔ No runtime swap before `R1.2` metrics exist. |
 | Occupancy decision | Slot-bbox IoU (until `R1.1`) | ⬆ Being replaced by polygon coverage ratio (`R1.1`) — a geometry fix, not a model upgrade. Do not attempt to fix occupancy accuracy with a bigger model before `R1.1` lands. |
 | Occupancy (alternative to evaluate) | Per-slot patch classifier (CNRPark/mAlexNet style) | ⬆ `R2.1` runs it head-to-head against fine-tuned YOLO on pilot footage. For fixed cameras it is often more accurate *and* cheaper than detection+overlap. Decision by benchmark, not preference. |
 | Motion → "soon" | ByteTrack centroid displacement | ✅ Right-sized. BoT-SORT/OC-SORT add cost with no measured gain on a fixed camera. |
