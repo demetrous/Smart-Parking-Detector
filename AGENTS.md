@@ -30,7 +30,7 @@ The April 2026 guardrails still hold, extended by the July 2026 review:
 3. **Detection hot path stays YOLO11-family + ByteTrack.** Fine-tune before any family swap (`R2.1`).
 4. **VLMs (Gemma etc.) are event-triggered adjuncts only.** Never in the per-frame occupancy loop.
 5. **Browser-driven detection is demo/authoring-only.** The hybrid view posting frames to `detector/detector/server.py` exists for slot authoring and demos. Production detection is headless `python -m detector.main` reading RTSP. Do not grow the browser path into a parallel production pipeline.
-6. **Demo freeze.** `HybridStreetMapView.tsx` and `SimulationView.tsx` get bug fixes only — no new features — until the `R1.2` pilot produces accuracy metrics. The demo layer already exceeds the detection core in line count; do not widen that gap.
+6. **Demo freeze.** `HybridStreetMapView.tsx` and `SimulationView.tsx` get bug fixes only — no new features — until the `R1.2` pilot produces accuracy metrics. The demo layer already exceeds the detection core in line count; do not widen that gap. Approved exceptions: the hybrid view preloads the 1st Ave demo street view (`frontend/src/assets/demo/`) when no project media exists (Dmitrii, 2026-10-09).
 7. **HTTP ingest stays.** No MQTT/NATS until measured multi-camera load justifies it.
 8. **Keep `react-map-gl/maplibre`.** It is actively used.
 9. **Single-process backend.** In-memory `SpotStore` + `Hub` assume exactly one uvicorn worker. Never suggest `--workers N>1`; never add features that assume state is shared across processes. If one process stops being enough, that is a roadmap discussion, not a quick fix.
