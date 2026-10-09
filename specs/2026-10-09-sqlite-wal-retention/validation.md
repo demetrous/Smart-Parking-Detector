@@ -24,7 +24,7 @@ Ready to merge when everything below holds.
 
 ## Manual
 
-- [ ] Start the backend against a copy of a real `parking.db`: `parking.db-wal` and `parking.db-shm` appear, and the log shows the startup prune count
+- [ ] Start the backend against a copy of a real `parking.db`: `parking.db-wal` and `parking.db-shm` appear while it runs (SQLite removes them on a clean shutdown), and `SELECT COUNT(*) FROM spot_history` drops only by rows from sessions that ended before the cutoff (the prune count is logged at INFO, which plain `uvicorn` does not print by default)
 - [ ] `sqlite3 parking.db "PRAGMA journal_mode;"` prints `wal`
 - [ ] With the simulator on for a few minutes, no `database is locked` errors in the log
 - [ ] `GET /spots/{id}/dwell` returns the same numbers before and after a restart that pruned nothing new

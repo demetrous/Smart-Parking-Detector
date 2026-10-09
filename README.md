@@ -128,7 +128,7 @@ flowchart LR
     subgraph backend ["Backend  (backend/)"]
         API["main.py\nFastAPI routes"]
         Store["store.py\nIn-memory spot state"]
-        DB["db.py\nSQLite  ·  parking.db\ncurrent state + full history"]
+        DB["db.py\nSQLite  ·  parking.db\ncurrent state + 90-day history"]
         Dwell["dwell_checker_loop\n'soon' via history stats"]
     end
 
@@ -383,7 +383,7 @@ Treat this as **suitable for private pilots and on-prem experiments**, not as a 
   - Store detector/backend shared secrets and environment variables outside source control.
   - `POST /spots` is HMAC-authenticated; production deploys must set `PARKINGSPOTTER_SHARED_SECRET` on both services.
 - **Backups**
-  - SQLite is acceptable for the current MVP, but `parking.db` must be backed up regularly because it contains current state and dwell history.
+  - SQLite is acceptable for the current MVP, but `parking.db` must be backed up regularly because it contains current state and dwell history. The database runs in WAL mode, so recent writes may live in `parking.db-wal`: back up with `sqlite3 parking.db ".backup parking-backup.db"` (safe while the backend runs) rather than copying only the `.db` file.
 - **Privacy**
   - The backend stores spot status metadata, not raw video or license plates. Keep camera streams and any retained footage governed by the detector/site privacy policy.
 
@@ -521,7 +521,8 @@ Smart-Parking-Detector/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SIMULATOR` | `true` | Set to `false` when a real detector is running |
-| `DB_PATH` | `parking.db` | Path to the SQLite database file |
+| `DB_PATH` | `parking.db` | Path to the SQLite database file (opened in WAL mode; keep it on a local disk) |
+| `PARKINGSPOTTER_HISTORY_RETENTION_DAYS` | `90` | Delete `spot_history` sessions that ended more than this many days ago (startup pass + daily). A spot's open session is always kept. `0` keeps history forever |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated list of allowed browser origins |
 | `PARKINGSPOTTER_SHARED_SECRET` | *(required for detector ingest)* | Shared secret used to verify signed detector `POST /spots` requests |
 | `PARKINGSPOTTER_MAX_SIGNATURE_AGE_SECONDS` | `30` | Maximum allowed clock skew / replay window for detector request signatures |
