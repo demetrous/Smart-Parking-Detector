@@ -37,8 +37,8 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 12. `P3.3` Pilot product-layer endpoints `Completed Apr 24, 2026`
 13. `P3.4` Synthetic 3D street simulation and live visual overlay `Completed Apr 24, 2026`
 14. `R0.1` Secure the projects API `Completed Oct 9, 2026` (`specs/2026-10-09-secure-projects-api/`)
-15. `R0.2` SQLite durability + history retention — **implemented, in review** (`specs/2026-10-09-sqlite-wal-retention/`)
-16. `R0.3` "Soon" lifecycle correctness — **pending**
+15. `R0.2` SQLite durability + history retention `Completed Oct 9, 2026` (`specs/2026-10-09-sqlite-wal-retention/`)
+16. `R0.3` "Soon" lifecycle correctness — **implemented, in review** (`specs/2026-10-09-soon-lifecycle/`)
 17. `R1.1` Occupancy metric v2 (polygon coverage) — **pending**
 18. `R1.2` Real-camera pilot + labeled benchmark — **pending**
 19. `R1.3` Single geometry implementation — **pending**
@@ -638,10 +638,10 @@ Make the yellow signal trustworthy: dwell promotions must demote when the predic
 
 **Progress**
 
-- [ ] Promotion tracking in `SpotStore`
-- [ ] Merge/promotion composition rule
-- [ ] Demotion rule + env var
-- [ ] Tests + docs
+- [x] Promotion tracking in `SpotStore`
+- [x] Merge/promotion composition rule
+- [x] Demotion rule + env var
+- [x] Tests + docs
 
 ## R1 — contact with reality
 

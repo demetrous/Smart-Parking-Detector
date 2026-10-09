@@ -22,7 +22,7 @@ The map updates **instantly** as things change — no page refresh needed.
 
 "Soon" is the most useful signal for a driver circling the block. ParkingSpotter produces it two ways:
 
-1. **Dwell-time prediction** — the backend keeps a history of how long cars typically park in each spot. When a car has been there for, say, 70 % of the average parking duration, the spot turns yellow. Like knowing a parking meter is about to expire.
+1. **Dwell-time prediction** — the backend keeps a history of how long cars typically park in each spot. When a car has been there for, say, 70 % of the average parking duration, the spot turns yellow. Like knowing a parking meter is about to expire. If the car is still there at 130 % of the average, the prediction missed and the spot goes back to red, so yellow keeps meaning something.
 
 2. **Motion detection** — the detector (camera AI) uses vehicle tracking (ByteTrack) to watch whether a car inside a slot has started moving. The moment it detects the car pulling out, the spot turns yellow immediately — no waiting for a timer.
 
@@ -104,7 +104,9 @@ And when it looks like the car is leaving:
 11. Backend dwell-checker runs every 15 s.
 12. A1 has been occupied for 70 % of its historical mean dwell time.
 13. Backend promotes A1 → "soon" and broadcasts the update.
-14. A1 pin turns yellow.
+14. A1 pin turns yellow. New camera reports of "occupied" keep it yellow.
+15. If the car is still there at 130 % of the mean dwell, the backend demotes
+    A1 back to "occupied" (red) and does not promote it again until the car leaves.
 ```
 
 ---
@@ -532,8 +534,10 @@ Smart-Parking-Detector/
 | `PARKINGSPOTTER_MAX_ZIP_ENTRIES` | `2000` | Max number of entries in an imported project ZIP |
 | `PARKINGSPOTTER_MAX_ZIP_UNCOMPRESSED_MB` | `1024` | Max total uncompressed size of an imported project ZIP |
 | `SOON_THRESHOLD` | `0.7` | Fraction of mean dwell time after which a spot turns yellow (0.7 = 70 %) |
+| `SOON_DEMOTE_FACTOR` | `1.3` | Multiple of mean dwell time after which a dwell-promoted spot that is still occupied goes back to red (1.3 = 130 %). Must be greater than `SOON_THRESHOLD`, otherwise dwell promotions are off (a warning is logged) |
 | `DWELL_MIN_COUNT` | `3` | Minimum number of historical dwell samples needed before predictions activate |
 | `DWELL_CHECK_INTERVAL` | `15.0` | How often (seconds) the dwell-checker runs |
+| `PARKINGSPOTTER_LOG_LEVEL` | `INFO` | Level of the backend's own log lines (retention, dwell promotions/demotions, warnings) under plain `uvicorn` |
 | `MERGE_CONFIG_PATH` | — | Optional path to a JSON merge file for multi-camera priority (see `backend/merge.example.json`) |
 
 ### Detector — CLI flags

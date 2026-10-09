@@ -48,10 +48,12 @@ Spec: [`2026-10-09-sqlite-wal-retention/`](2026-10-09-sqlite-wal-retention/requi
 **Goal:** Yellow pins demote when the dwell prediction misses, and the dwell
 checker no longer races the multi-camera merge.
 
-- [ ] Promotion tracking in `SpotStore`
-- [ ] Merge/promotion composition rule
-- [ ] Demotion rule + env var
-- [ ] Tests + docs
+Spec: [`2026-10-09-soon-lifecycle/`](2026-10-09-soon-lifecycle/requirements.md)
+
+- [x] Promotion tracking in `SpotStore`
+- [x] Merge/promotion composition rule
+- [x] Demotion rule + env var
+- [x] Tests + docs
 
 ---
 
