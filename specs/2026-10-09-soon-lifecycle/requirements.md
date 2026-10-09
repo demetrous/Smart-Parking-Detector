@@ -82,10 +82,10 @@ promotion/demotion time, so a client never sees time go backwards.
 - Ordering of WebSocket broadcasts between two concurrent publishers (same as
   today between two detector posts); the frontend and `spot_history` order is
   fixed by the writer lock up to the broadcast call.
-- Spots that exist only as a `spots` row with no camera observations (demo
+- ~~Spots that exist only as a `spots` row with no camera observations (demo
   seeds, legacy posts without `cameraId`): a persisted `soon` for those is
-  bootstrapped as base `soon`, as today. Real detector posts always carry
-  `cameraId`, so their base is rebuilt from observations on restart.
+  bootstrapped as base `soon`, as today.~~ Moved in scope by the post-merge
+  review, see "Follow-up" below.
 - Any change to `POST /spots` HMAC, the projects API or the frontend.
 
 ## Decisions
@@ -145,3 +145,25 @@ promotion/demotion time, so a client never sees time go backwards.
 - Files likely to change: `backend/app/store.py`, `backend/app/main.py`, new
   `backend/tests/test_soon_lifecycle.py`, `README.md`, `backend/README.md`,
   `specs/roadmap.md`, `todo.md`.
+
+## Follow-up (post-merge review, 2026-10-09)
+
+The verification review (`/mnt/project-files/sdd-phase3/phase3-verification-review.md`)
+found two gaps; Dmitrii chose to fix both in one follow-up PR.
+
+- **Session guard.** `SpotStore` keeps a per-spot occupancy-session counter,
+  bumped when the base enters `available` (detector merge or direct write) and
+  on bootstrap. `dwell_snapshot` returns it; the checker passes it back to
+  `promote_dwell` / `demote_dwell`, which are no-ops if it changed. Without it,
+  a car that left and was replaced by a new one while the checker was querying
+  SQLite was promoted on the previous car's elapsed time and stayed yellow until
+  `SOON_DEMOTE_FACTOR` × mean.
+- **Restart.** A `spots` row that is `soon` with no camera observations is
+  restored as base `occupied` when its open `spot_history` session saw
+  `occupied` before (a dwell promotion, or a legacy motion `soon` without
+  `cameraId`, which shows `occupied` until its next post). A `soon` that started
+  its session (demo seed `C8`) is kept. At bootstrap, any spot whose published
+  status differs from its `spots` row (these restores, or a camera-backed spot
+  whose merge no longer says `soon`) is persisted and logged, so `spot_history`
+  matches what clients see.
+

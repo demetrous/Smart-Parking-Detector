@@ -24,6 +24,8 @@ Ready to merge when everything below holds.
 - [ ] Past the demote point at startup (no bookkeeping) → no promotion
 - [ ] Dwell stats are unchanged by promotion/demotion history rows
 - [ ] Checker loop survives a failing pass
+- [ ] Follow-up: a car that leaves and is replaced during a checker pass is not promoted (session guard)
+- [ ] Follow-up: after a restart a stored dwell `soon` publishes `occupied` (and is re-promoted inside the window); a seeded `soon` and a camera motion `soon` are kept
 - [ ] Existing merge, dwell, upsert, pilot API, auth and retention tests pass unchanged
 
 ## Manual

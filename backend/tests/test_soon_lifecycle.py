@@ -254,7 +254,7 @@ async def test_motion_soon_passes_through_and_is_not_promoted(env) -> None:
     assert since is not None
 
     await _check(since, 0.75)
-    snapshot = {sid: promo for sid, _status, promo in await store.dwell_snapshot()}
+    snapshot = {c.spot_id: c.promotion for c in await store.dwell_snapshot()}
     assert snapshot["A1"] is None
     assert hub.statuses == []
 
@@ -335,7 +335,7 @@ async def test_upsert_canonical_clears_promotion(env) -> None:
 
     await store.upsert_canonical(_obs("occupied", cam=None))
     assert await _published(store) == "occupied"
-    snapshot = {sid: promo for sid, _status, promo in await store.dwell_snapshot()}
+    snapshot = {c.spot_id: c.promotion for c in await store.dwell_snapshot()}
     assert snapshot["A1"] is None
 
 
@@ -402,6 +402,162 @@ async def test_insufficient_history_never_promotes(env) -> None:
 
     assert await _published(store) == "occupied"
     assert hub.statuses == []
+
+
+# ---------------------------------------------------------------------------
+# Session guard: a new car is never promoted on the previous car's elapsed time
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_new_car_during_check_is_not_promoted(env, monkeypatch) -> None:
+    """Car leaves and a new one parks while the checker is between its query and promote."""
+    store, hub = env
+    since = await _occupied_with_history(store)
+    real_occupied_since = db.occupied_since_db
+
+    async def racing_occupied_since(spot_id: str):
+        start = await real_occupied_since(spot_id)
+        await store.apply_detector_update(_obs("available"))
+        await store.apply_detector_update(_obs("occupied"))
+        return start
+
+    monkeypatch.setattr(main, "occupied_since_db", racing_occupied_since)
+    await _check(since, 0.75)
+
+    assert await _published(store) == "occupied"
+    assert hub.statuses == []
+    snapshot = {c.spot_id: c.promotion for c in await store.dwell_snapshot()}
+    assert snapshot["A1"] is None
+
+
+@pytest.mark.anyio
+async def test_stale_session_promote_and_demote_are_noops(env) -> None:
+    store, _hub = env
+    since = await _occupied_with_history(store)
+    (stale,) = await store.dwell_snapshot()
+
+    # A simulator/seed write that ends the session counts too.
+    await store.upsert_canonical(_obs("available", cam=None))
+    await store.upsert_canonical(_obs("occupied", cam=None))
+    now = since + timedelta(seconds=0.75 * MEAN_DWELL_S)
+    assert not (await store.promote_dwell("A1", now, session=stale.session)).applied
+    assert await _published(store) == "occupied"
+
+    (fresh,) = await store.dwell_snapshot()
+    assert fresh.session != stale.session
+    assert (await store.promote_dwell("A1", now, session=fresh.session)).applied
+    assert await _published(store) == "soon"
+
+    later = since + timedelta(seconds=1.35 * MEAN_DWELL_S)
+    assert not (await store.demote_dwell("A1", later, session=stale.session)).applied
+    assert await _published(store) == "soon"
+    assert (await store.demote_dwell("A1", later, session=fresh.session)).applied
+    assert await _published(store) == "occupied"
+
+
+@pytest.mark.anyio
+async def test_repeated_observations_keep_session(env) -> None:
+    """Only a transition into available starts a new session, not every post."""
+    store, _hub = env
+    since = await _occupied_with_history(store)
+    (before,) = await store.dwell_snapshot()
+    await store.apply_detector_update(_obs("occupied"))
+    await store.apply_detector_update(_obs("soon"))
+    await store.apply_detector_update(_obs("occupied", cam="cam_2"))
+    (after,) = await store.dwell_snapshot()
+    assert after.session == before.session
+
+    await _check(since, 0.75)
+    assert await _published(store) == "soon"
+
+
+# ---------------------------------------------------------------------------
+# Restart: dwell 'soon' is not kept, seeds and motion 'soon' are
+# ---------------------------------------------------------------------------
+
+
+async def _restart(monkeypatch: pytest.MonkeyPatch) -> SpotStore:
+    store = SpotStore()
+    await store.bootstrap_from_db(await db.load_spots_db(), await db.load_observations_db())
+    monkeypatch.setattr(main, "store", store)
+    return store
+
+
+async def _history_statuses(spot_id: str = "A1") -> list[str]:
+    async with db.connect() as conn:
+        async with conn.execute(
+            "SELECT status FROM spot_history WHERE spot_id = ? ORDER BY rowid", (spot_id,)
+        ) as cur:
+            return [r[0] for r in await cur.fetchall()]
+
+
+@pytest.mark.anyio
+async def test_restart_restores_dwell_soon_without_camera_to_occupied(env, monkeypatch) -> None:
+    store, hub = env
+    since = await _occupied_with_history(store, cam=None)
+    await _check(since, 0.75)
+    assert (await db.load_spots_db())[0][3] == "soon"
+
+    store = await _restart(monkeypatch)
+    assert await _published(store) == "occupied"
+    rows = {r[0]: r for r in await db.load_spots_db()}
+    assert rows["A1"][3] == "occupied"
+    assert (await _history_statuses())[-2:] == ["soon", "occupied"]
+    assert await db.occupied_since_db("A1") == since  # same session, dwell unchanged
+
+    # Still inside the window: the checker promotes it again.
+    await _check(since, 0.8)
+    assert await _published(store) == "soon"
+    assert hub.statuses == ["soon", "soon"]
+
+
+@pytest.mark.anyio
+async def test_restart_past_window_stays_occupied(env, monkeypatch) -> None:
+    store, hub = env
+    since = await _occupied_with_history(store, cam=None)
+    await _check(since, 0.75)
+
+    store = await _restart(monkeypatch)
+    await _check(since, 1.4)
+    assert await _published(store) == "occupied"
+    assert hub.statuses == ["soon"]
+
+
+@pytest.mark.anyio
+async def test_restart_keeps_seeded_soon(env, monkeypatch) -> None:
+    """A 'soon' that started its session (demo seed) is not a dwell promotion."""
+    store, _hub = env
+    await store.upsert_canonical(_obs("soon", cam=None))
+
+    store = await _restart(monkeypatch)
+    assert await _published(store) == "soon"
+    assert await _history_statuses() == ["soon"]
+
+
+@pytest.mark.anyio
+async def test_restart_with_observations_persists_merged_status(env, monkeypatch) -> None:
+    store, _hub = env
+    since = await _occupied_with_history(store)
+    await _check(since, 0.75)
+
+    store = await _restart(monkeypatch)
+    assert await _published(store) == "occupied"
+    rows = {r[0]: r for r in await db.load_spots_db()}
+    assert rows["A1"][3] == "occupied"
+    assert (await _history_statuses())[-2:] == ["soon", "occupied"]
+
+
+@pytest.mark.anyio
+async def test_restart_keeps_motion_soon_from_camera(env, monkeypatch) -> None:
+    store, _hub = env
+    await _occupied_with_history(store)
+    await store.apply_detector_update(_obs("soon"))
+    history = await _history_statuses()
+
+    store = await _restart(monkeypatch)
+    assert await _published(store) == "soon"
+    assert await _history_statuses() == history
 
 
 # ---------------------------------------------------------------------------

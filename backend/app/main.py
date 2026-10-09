@@ -144,14 +144,16 @@ async def dwell_check_once(
     Promotion window: ``threshold * mean <= elapsed < demote_factor * mean``, measured from
     the start of the current occupancy session. The upper bound keeps a restart (which
     loses promotion bookkeeping) from promoting a spot that is already past the demote
-    point. A demoted spot is not promoted again until its session ends.
+    point. A demoted spot is not promoted again until its session ends. The snapshot's
+    session counter is passed back to the store, so a car that left (or was replaced by
+    a new one) while this pass was querying SQLite is never promoted or demoted.
     """
     now = now or datetime.now(timezone.utc)
     threshold = _SOON_THRESHOLD if threshold is None else threshold
     demote_factor = _SOON_DEMOTE_FACTOR if demote_factor is None else demote_factor
     min_count = _DWELL_MIN_COUNT if min_count is None else min_count
 
-    for spot_id, base_status, promotion in await store.dwell_snapshot():
+    for spot_id, base_status, promotion, session in await store.dwell_snapshot():
         if promotion is not None and not promotion.active:
             continue
         if promotion is None and base_status != "occupied":
@@ -168,12 +170,12 @@ async def dwell_check_once(
         if promotion is None:
             if not (threshold * mean <= elapsed < demote_factor * mean):
                 continue
-            result = await store.promote_dwell(spot_id, now)
+            result = await store.promote_dwell(spot_id, now, session=session)
             action = "promoted to soon"
         else:
             if elapsed < demote_factor * mean:
                 continue
-            result = await store.demote_dwell(spot_id, now)
+            result = await store.demote_dwell(spot_id, now, session=session)
             action = "demoted, prediction missed"
 
         if not result.applied or result.spot is None:
