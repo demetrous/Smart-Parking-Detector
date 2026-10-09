@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import zipfile
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -13,6 +14,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 
 from .projects_auth import (
+    format_mb,
     max_upload_bytes,
     max_zip_entries,
     max_zip_uncompressed_bytes,
@@ -170,7 +172,7 @@ async def save_project_asset(project_id: str, file: UploadFile, kind: str) -> Pr
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > limit:
-                    raise payload_too_large(f"Upload exceeds the {limit // (1024 * 1024)} MB limit")
+                    raise payload_too_large(f"Upload exceeds the {format_mb(limit)} limit")
                 output.write(chunk)
     except BaseException:
         destination.unlink(missing_ok=True)
@@ -223,7 +225,7 @@ async def import_project_zip(file: UploadFile) -> ProjectImportResult:
     source.seek(0)
     limit = max_upload_bytes()
     if upload_size > limit:
-        raise payload_too_large(f"Project ZIP exceeds the {limit // (1024 * 1024)} MB limit")
+        raise payload_too_large(f"Project ZIP exceeds the {format_mb(limit)} limit")
     try:
         archive = zipfile.ZipFile(source)
     except zipfile.BadZipFile as exc:
@@ -236,14 +238,17 @@ async def import_project_zip(file: UploadFile) -> ProjectImportResult:
     uncompressed_limit = max_zip_uncompressed_bytes()
     if sum(member.file_size for member in members) > uncompressed_limit:
         raise payload_too_large(
-            f"Project ZIP expands beyond the {uncompressed_limit // (1024 * 1024)} MB limit"
+            f"Project ZIP expands beyond the {format_mb(uncompressed_limit)} limit"
         )
 
     names = archive.namelist()
     if "project.json" not in names:
         raise HTTPException(status_code=400, detail="Project ZIP is missing project.json")
 
-    manifest = ProjectManifest.model_validate_json(archive.read("project.json").decode("utf-8"))
+    try:
+        manifest = ProjectManifest.model_validate_json(archive.read("project.json").decode("utf-8"))
+    except (ValueError, zipfile.BadZipFile, zlib.error) as exc:  # ValidationError is a ValueError
+        raise HTTPException(status_code=400, detail="Invalid project.json in ZIP") from exc
     project_id = slugify(manifest.id)
     if project_id != manifest.id:
         raise HTTPException(status_code=400, detail="Invalid project id in manifest")
@@ -272,12 +277,15 @@ async def import_project_zip(file: UploadFile) -> ProjectImportResult:
                     written += len(chunk)
                     if written > uncompressed_limit:
                         raise payload_too_large(
-                            f"Project ZIP expands beyond the {uncompressed_limit // (1024 * 1024)} MB limit"
+                            f"Project ZIP expands beyond the {format_mb(uncompressed_limit)} limit"
                         )
                     output.write(chunk)
             imported += 1
-    except Exception:
+    except Exception as exc:
         shutil.rmtree(target, ignore_errors=True)
+        if isinstance(exc, (zipfile.BadZipFile, zlib.error)):
+            # Corrupt entry or a ZIP whose declared sizes don't match its data.
+            raise HTTPException(status_code=400, detail="Invalid project ZIP") from exc
         raise
 
     manifest = read_manifest(project_id)
