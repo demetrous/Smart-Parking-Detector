@@ -5,6 +5,7 @@ import SimulationView from './SimulationView';
 import type { Spot } from '../types';
 import {
   createProject,
+  describeProjectError,
   fetchProject,
   fetchProjects,
   importProject,
@@ -392,8 +393,8 @@ export default function HybridStreetMapView() {
       localStorage.setItem(LAST_PROJECT_KEY, project.id);
       await refreshProjects();
       setProjectStatus(`Created ${project.name}`);
-    } catch {
-      setProjectStatus('Could not create project');
+    } catch (error) {
+      setProjectStatus(describeProjectError('Could not create project', error));
     }
   };
 
@@ -419,8 +420,8 @@ export default function HybridStreetMapView() {
       setActiveProject(updated);
       await refreshProjects();
       setProjectStatus('Project saved');
-    } catch {
-      setProjectStatus('Could not save project');
+    } catch (error) {
+      setProjectStatus(describeProjectError('Could not save project', error));
     }
   };
 
@@ -437,8 +438,8 @@ export default function HybridStreetMapView() {
       await refreshProjects();
       setProjectStatus(`Saved ${filename}`);
       return asset;
-    } catch {
-      setProjectStatus(`Could not save ${filename}`);
+    } catch (error) {
+      setProjectStatus(describeProjectError(`Could not save ${filename}`, error));
       return null;
     }
   };
@@ -689,8 +690,8 @@ export default function HybridStreetMapView() {
                   await refreshProjects();
                   await openProject(result.project.id);
                   setProjectStatus(`Imported ${result.project.name}`);
-                } catch {
-                  setProjectStatus('Could not import project');
+                } catch (error) {
+                  setProjectStatus(describeProjectError('Could not import project', error));
                 }
               }
               e.currentTarget.value = '';

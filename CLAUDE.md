@@ -6,7 +6,7 @@ this repo (guardrails, development process, verification gate, priorities).
 Quick facts:
 
 - Three services: `detector/` (YOLO11 + ByteTrack) → `backend/` (FastAPI + SQLite + WS) → `frontend/` (React + MapLibre). Do not restructure.
-- Work from the prescriptive specs in [`todo.md`](todo.md); current phase is the July 2026 `R0`–`R3` readiness push. Model-tier selection lives in [`docs/MODEL-ROUTING.md`](docs/MODEL-ROUTING.md).
+- New work starts from [`specs/`](specs/README.md) (spec-driven: constitution + one spec directory per roadmap phase). Detailed item specs live in [`todo.md`](todo.md); current phase is the July 2026 `R0`–`R3` readiness push. Model-tier selection lives in [`docs/MODEL-ROUTING.md`](docs/MODEL-ROUTING.md).
 - Verification gate before claiming anything done, from repo root:
   - `python -m pytest` (must pass without GPU, camera, or YOLO weights)
   - `cd frontend && npm run lint && npm run build`

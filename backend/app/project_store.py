@@ -12,6 +12,12 @@ from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
 
+from .projects_auth import (
+    max_upload_bytes,
+    max_zip_entries,
+    max_zip_uncompressed_bytes,
+    payload_too_large,
+)
 from .project_models import (
     ProjectAsset,
     ProjectCreate,
@@ -157,11 +163,18 @@ async def save_project_asset(project_id: str, file: UploadFile, kind: str) -> Pr
     destination = _resolve_project_relative(project_id, relative)
     destination.parent.mkdir(parents=True, exist_ok=True)
 
+    limit = max_upload_bytes()
     size = 0
-    with destination.open("wb") as output:
-        while chunk := await file.read(1024 * 1024):
-            size += len(chunk)
-            output.write(chunk)
+    try:
+        with destination.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > limit:
+                    raise payload_too_large(f"Upload exceeds the {limit // (1024 * 1024)} MB limit")
+                output.write(chunk)
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
 
     asset = ProjectAsset(
         path=relative,
@@ -203,11 +216,28 @@ def export_project_zip(project_id: str) -> bytes:
 
 
 async def import_project_zip(file: UploadFile) -> ProjectImportResult:
-    raw = await file.read()
+    # Read from the spooled upload instead of loading it all into memory.
+    source = file.file
+    source.seek(0, os.SEEK_END)
+    upload_size = source.tell()
+    source.seek(0)
+    limit = max_upload_bytes()
+    if upload_size > limit:
+        raise payload_too_large(f"Project ZIP exceeds the {limit // (1024 * 1024)} MB limit")
     try:
-        archive = zipfile.ZipFile(io.BytesIO(raw))
+        archive = zipfile.ZipFile(source)
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=400, detail="Invalid project ZIP") from exc
+
+    members = archive.infolist()
+    entry_limit = max_zip_entries()
+    if len(members) > entry_limit:
+        raise payload_too_large(f"Project ZIP has more than {entry_limit} entries")
+    uncompressed_limit = max_zip_uncompressed_bytes()
+    if sum(member.file_size for member in members) > uncompressed_limit:
+        raise payload_too_large(
+            f"Project ZIP expands beyond the {uncompressed_limit // (1024 * 1024)} MB limit"
+        )
 
     names = archive.namelist()
     if "project.json" not in names:
@@ -223,6 +253,7 @@ async def import_project_zip(file: UploadFile) -> ProjectImportResult:
 
     target.mkdir(parents=True)
     imported = 0
+    written = 0
     try:
         for member in names:
             member_path = Path(member)
@@ -235,7 +266,15 @@ async def import_project_zip(file: UploadFile) -> ProjectImportResult:
                 destination.mkdir(parents=True, exist_ok=True)
                 continue
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(archive.read(member))
+            # Count bytes actually written: declared sizes in the ZIP can lie.
+            with archive.open(member) as entry, destination.open("wb") as output:
+                while chunk := entry.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > uncompressed_limit:
+                        raise payload_too_large(
+                            f"Project ZIP expands beyond the {uncompressed_limit // (1024 * 1024)} MB limit"
+                        )
+                    output.write(chunk)
             imported += 1
     except Exception:
         shutil.rmtree(target, ignore_errors=True)

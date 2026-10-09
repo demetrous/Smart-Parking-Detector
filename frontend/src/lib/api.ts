@@ -4,6 +4,37 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000';
 
 export const API_BASE_URL = API_URL;
 
+// Local authoring only: Vite inlines VITE_* values into the JS bundle, so anyone
+// who loads the page can read this token. Never set it for a publicly served build.
+const PROJECTS_TOKEN = ((import.meta.env.VITE_PROJECTS_TOKEN as string | undefined) ?? '').trim();
+
+function withProjectsAuth(headers: Record<string, string> = {}): Record<string, string> {
+  return PROJECTS_TOKEN ? { ...headers, Authorization: `Bearer ${PROJECTS_TOKEN}` } : headers;
+}
+
+export class ProjectWriteError extends Error {
+  readonly status: number;
+
+  constructor(action: string, status: number) {
+    super(`Failed to ${action}: ${status}`);
+    this.name = 'ProjectWriteError';
+    this.status = status;
+  }
+
+  /** Short, user-facing reason for the statuses the projects API guards with. */
+  get reason(): string | null {
+    if (this.status === 401) return 'projects token missing or wrong (VITE_PROJECTS_TOKEN)';
+    if (this.status === 413) return 'too large for the backend size limit';
+    return null;
+  }
+}
+
+/** Appends the 401/413 reason to a status message, if the error carries one. */
+export function describeProjectError(message: string, error: unknown): string {
+  const reason = error instanceof ProjectWriteError ? error.reason : null;
+  return reason ? `${message}: ${reason}` : message;
+}
+
 export async function fetchSpots(): Promise<Spot[]> {
   const res = await fetch(`${API_URL}/spots`);
   if (!res.ok) throw new Error(`Failed to fetch spots: ${res.status}`);
@@ -50,10 +81,10 @@ export async function fetchProjects(): Promise<ProjectManifest[]> {
 export async function createProject(name: string): Promise<ProjectManifest> {
   const res = await fetch(`${API_URL}/projects`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withProjectsAuth({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ name }),
   });
-  if (!res.ok) throw new Error(`Failed to create project: ${res.status}`);
+  if (!res.ok) throw new ProjectWriteError('create project', res.status);
   return res.json();
 }
 
@@ -66,10 +97,10 @@ export async function fetchProject(projectId: string): Promise<ProjectManifest> 
 export async function patchProject(projectId: string, patch: Partial<ProjectManifest>): Promise<ProjectManifest> {
   const res = await fetch(`${API_URL}/projects/${projectId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: withProjectsAuth({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(`Failed to update project: ${res.status}`);
+  if (!res.ok) throw new ProjectWriteError('update project', res.status);
   return res.json();
 }
 
@@ -83,9 +114,10 @@ export async function uploadProjectAsset(
   formData.append('file', file, filename);
   const res = await fetch(`${API_URL}/projects/${projectId}/assets?kind=${kind}`, {
     method: 'POST',
+    headers: withProjectsAuth(),
     body: formData,
   });
-  if (!res.ok) throw new Error(`Failed to upload project asset: ${res.status}`);
+  if (!res.ok) throw new ProjectWriteError('upload project asset', res.status);
   return res.json();
 }
 
@@ -94,9 +126,10 @@ export async function importProject(file: File): Promise<{ project: ProjectManif
   formData.append('file', file, file.name);
   const res = await fetch(`${API_URL}/projects/import`, {
     method: 'POST',
+    headers: withProjectsAuth(),
     body: formData,
   });
-  if (!res.ok) throw new Error(`Failed to import project: ${res.status}`);
+  if (!res.ok) throw new ProjectWriteError('import project', res.status);
   return res.json();
 }
 

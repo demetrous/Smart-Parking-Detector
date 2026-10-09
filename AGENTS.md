@@ -3,6 +3,7 @@
 Authoritative guide for AI agents (and humans) making changes in this repo.
 Read this file before writing code. Detailed references:
 
+- [`specs/`](specs/README.md) — spec-driven workflow: the constitution (`mission.md`, `tech-stack.md`, `roadmap.md`) and one dated spec directory per roadmap phase. **Start here for new work.**
 - [`todo.md`](todo.md) — the execution roadmap (April 2026 consensus items, all complete, plus the July 2026 `R0`–`R3` readiness push). **Work from it; do not re-litigate architecture.**
 - [`docs/MODEL-ROUTING.md`](docs/MODEL-ROUTING.md) — which model tier to use for which task: dev-agent routing *and* runtime CV model routing.
 - [`docs/PROJECT-REVIEW-2026-07.md`](docs/PROJECT-REVIEW-2026-07.md) — the July 2026 independent review: findings, evidence, and the readiness gap. The `R0`–`R3` items derive from it.
@@ -38,7 +39,7 @@ The April 2026 guardrails still hold, extended by the July 2026 review:
 
 ## Development process
 
-1. **Spec first.** Every roadmap item follows the `todo.md` format: *Goal / Likely files / Required implementation / Acceptance criteria / Progress checkboxes*. If you are asked to do work that has no spec, write the spec into `todo.md` first (or propose it) — this format is the contract that makes implementation safe.
+1. **Spec first.** New work follows the spec-driven loop in [`specs/README.md`](specs/README.md): pick the next phase in `specs/roadmap.md`, interview the user, and write `specs/YYYY-MM-DD-<feature>/` with `requirements.md`, `plan.md` and `validation.md` (the `feature-spec` skill does this). The detailed `todo.md` sections (*Goal / Likely files / Required implementation / Acceptance criteria / Progress*) remain the source a phase spec draws from. Work with no roadmap phase gets a phase added to `specs/roadmap.md` (or proposed) first.
 2. **Implement additively, with tests.** Any schema or API change updates the relevant docs (`README.md`, service READMEs) in the same task. Prefer pure-function tests; tests must run without a camera, GPU, or model downloads.
 3. **Run the verification gate** (below) before claiming an item done. Report actual output, not intentions.
 4. **Independent verification pass.** After a batch of roadmap items merges, a *different* model than the implementer reviews the diff against the acceptance criteria (see `docs/MODEL-ROUTING.md`). Verifiers must run the suite themselves before filing findings — the April 2026 corrections pass ([`Corrections from Opus 4.7, Apr 22.md`](Corrections%20from%20Opus%204.7,%20Apr%2022.md)) is the model to follow.

@@ -24,6 +24,7 @@ from .db import (
 from .hub import Hub
 from .models import Event, Spot, SpotStatus
 from .project_models import ProjectCreate, ProjectListResponse, ProjectManifest, ProjectPatch
+from .projects_auth import ProjectWriteGuard, warn_if_projects_open
 from .project_store import (
     asset_path,
     create_project,
@@ -188,6 +189,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="ParkingSpotter Backend", version="0.2.0", lifespan=lifespan)
+
+    # Added before CORS so CORS stays outermost and 401/413 responses carry its headers.
+    app.add_middleware(ProjectWriteGuard)
+    warn_if_projects_open()
 
     default_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
     cors_origins = os.getenv("CORS_ORIGINS", ",".join(default_origins)).split(",")

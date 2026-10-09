@@ -9,3 +9,8 @@ VITE_API_URL=http://127.0.0.1:8000
 
 # Optional YOLO detector service used by the synthetic 3D demo "YOLO feed" button
 VITE_DETECTOR_URL=http://127.0.0.1:8010
+
+# Optional bearer token for project writes (create/save/upload/import). Must match
+# PARKINGSPOTTER_PROJECTS_TOKEN on the backend. LOCAL AUTHORING ONLY: Vite builds
+# this value into the JS bundle, so never set it for a publicly served frontend.
+# VITE_PROJECTS_TOKEN=
