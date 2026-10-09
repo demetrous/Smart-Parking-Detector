@@ -36,7 +36,7 @@ This file is the execution roadmap distilled from the April 2026 intermediate re
 11. `P2.2` Detector benchmark + YOLO11 fine-tuning workflow `Completed Apr 24, 2026`
 12. `P3.3` Pilot product-layer endpoints `Completed Apr 24, 2026`
 13. `P3.4` Synthetic 3D street simulation and live visual overlay `Completed Apr 24, 2026`
-14. `R0.1` Secure the projects API — **implemented, in review** (`specs/2026-10-09-secure-projects-api/`)
+14. `R0.1` Secure the projects API `Completed Oct 9, 2026` (`specs/2026-10-09-secure-projects-api/`)
 15. `R0.2` SQLite durability + history retention — **implemented, in review** (`specs/2026-10-09-sqlite-wal-retention/`)
 16. `R0.3` "Soon" lifecycle correctness — **pending**
 17. `R1.1` Occupancy metric v2 (polygon coverage) — **pending**
